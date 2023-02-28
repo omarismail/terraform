@@ -250,7 +250,7 @@ func (c *TestCommand) runScenarioStep(ctx context.Context, scenarioConfig *testc
 	// This prototype relies on a hack over in the "terraform init"
 	// command which preinstalls all of the modules for each step into
 	// a directory following this same naming scheme.
-	modulesCacheDir := filepath.Join(c.DataDir(), "test-scenarios", scenarioConfig.Name, stepConfig.Name, "modules")
+	modulesCacheDir := filepath.Join(c.DataDir(), "tests", scenarioConfig.Name, stepConfig.Name, "modules")
 	loader, err := configload.NewLoader(&configload.Config{
 		ModulesDir: modulesCacheDir,
 		Services:   c.Services,

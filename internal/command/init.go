@@ -395,7 +395,7 @@ func (c *InitCommand) getModules(path string, earlyRoot *tfconfig.Module, upgrad
 		for scenarioName, scenario := range suite.Scenarios {
 			for _, stepName := range scenario.StepsOrder {
 				step := scenario.Steps[stepName]
-				modulesCacheDir := filepath.Join(c.DataDir(), "test-scenarios", scenarioName, stepName, "modules")
+				modulesCacheDir := filepath.Join(c.DataDir(), "tests", scenarioName, stepName, "modules")
 				err := os.MkdirAll(modulesCacheDir, os.ModePerm)
 				if err != nil {
 					diags = diags.Append(fmt.Errorf("failed to create local modules directory: %s", err))

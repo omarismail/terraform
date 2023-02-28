@@ -29,7 +29,7 @@ func LoadSuiteForModule(moduleDir string, parser *configs.Parser) (*Suite, tfdia
 		Scenarios: make(map[string]*Scenario),
 	}
 
-	scenariosDir := filepath.Join(moduleDir, "test-scenarios")
+	scenariosDir := filepath.Join(moduleDir, "tests")
 	scenariosFiles, err := os.ReadDir(scenariosDir)
 	if os.IsNotExist(err) {
 		// It's fine for the scenarios directory to not exist at all. That

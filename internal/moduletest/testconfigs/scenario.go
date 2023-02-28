@@ -135,7 +135,7 @@ func loadScenarioFile(filename string, parser *configs.Parser) (*Scenario, tfdia
 			} else {
 				ret.MockProviderConfigs[newAddr] = p
 			}
-		case "step":
+		case "step", "run":
 			s, moreDiags := decodeStepBlock(block)
 			diags = diags.Append(moreDiags)
 			if existing, exists := ret.Steps[s.Name]; exists {
@@ -292,7 +292,7 @@ func checkScenarioConfigBlockOrder(blocks []*hcl.Block) tfdiags.Diagnostics {
 				})
 			}
 			seenProviders++
-		case "step":
+		case "step", "run":
 			seenSteps++
 		default:
 			// Should not get here because the cases above should cover all
@@ -310,5 +310,6 @@ var scenarioFileSchema = hcl.BodySchema{
 		{Type: "provider", LabelNames: []string{"local_name"}},
 		{Type: "mock_provider", LabelNames: []string{"local_name"}},
 		{Type: "step", LabelNames: []string{"name"}},
+		{Type: "run", LabelNames: []string{"name"}},
 	},
 }

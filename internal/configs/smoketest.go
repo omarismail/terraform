@@ -92,6 +92,18 @@ func decodeSmokeTestBlock(block *hcl.Block, override bool) (*SmokeTest, hcl.Diag
 			if !moreDiags.HasErrors() {
 				ret.Postconditions = append(ret.Postconditions, check)
 			}
+		case "assert":
+			check, moreDiags := decodeCheckRuleBlock(block, false)
+			diags = append(diags, moreDiags...)
+			if !moreDiags.HasErrors() {
+				ret.Postconditions = append(ret.Postconditions, check)
+			}
+		case "check":
+			check, moreDiags := decodeCheckRuleBlock(block, false)
+			diags = append(diags, moreDiags...)
+			if !moreDiags.HasErrors() {
+				ret.Postconditions = append(ret.Postconditions, check)
+			}
 		default:
 			// Should not get here because the above cases should be exhaustive
 			// for all of the block types in smokeTestBlockSchema.
@@ -116,5 +128,7 @@ var smokeTestBlockSchema = &hcl.BodySchema{
 		{Type: "data", LabelNames: []string{"type", "name"}},
 		{Type: "precondition"},
 		{Type: "postcondition"},
+		{Type: "check"},
+		{Type: "assert"},
 	},
 }

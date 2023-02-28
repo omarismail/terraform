@@ -192,6 +192,12 @@ func (v *OperationHuman) CheckStatusChanges(old, new *states.CheckResults) {
 					NewStatus: newStatus,
 					Message:   fmt.Sprintf("%s has been fixed", objAddr),
 				})
+			default: 
+				uiResults = append(uiResults, UICheckResult{
+					Module:    modAddr,
+					NewStatus: newStatus,
+					Message:   fmt.Sprintf("%s passed", objAddr),
+				})
 			}
 		case checks.StatusFail:
 			switch oldStatus {
