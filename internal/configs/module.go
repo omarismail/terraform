@@ -60,6 +60,9 @@ type Module struct {
 	Checks map[string]*Check
 
 	Tests map[string]*TestFile
+
+	// Phase 1: Basic integration support
+	Integrations map[string]*Integration
 }
 
 // File describes the contents of a single configuration file.
@@ -101,6 +104,9 @@ type File struct {
 
 	Checks  []*Check
 	Actions []*Action
+
+	// Phase 1: Basic integration support
+	Integrations []*Integration
 }
 
 // NewModuleWithTests matches NewModule except it will also load in the provided
@@ -138,6 +144,7 @@ func NewModule(primaryFiles, overrideFiles []*File) (*Module, hcl.Diagnostics) {
 		ProviderMetas:      map[addrs.Provider]*ProviderMeta{},
 		Tests:              map[string]*TestFile{},
 		Actions:            map[string]*Action{},
+		Integrations:       map[string]*Integration{}, // Phase 1
 	}
 
 	// Process the required_providers blocks first, to ensure that all
@@ -352,6 +359,20 @@ func (m *Module) appendFile(file *File) hcl.Diagnostics {
 			})
 		}
 		m.Variables[v.Name] = v
+	}
+
+	// Phase 1: Process integrations
+	for _, i := range file.Integrations {
+		if existing, exists := m.Integrations[i.Name]; exists {
+			diags = append(diags, &hcl.Diagnostic{
+				Severity: hcl.DiagError,
+				Summary:  "Duplicate integration declaration",
+				Detail:   fmt.Sprintf("An integration named %q was already declared at %s. Integration names must be unique within a module.", existing.Name, existing.DeclRange),
+				Subject:  &i.DeclRange,
+			})
+			continue
+		}
+		m.Integrations[i.Name] = i
 	}
 
 	for _, l := range file.Locals {

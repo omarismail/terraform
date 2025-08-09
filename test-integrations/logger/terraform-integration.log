@@ -1,0 +1,29 @@
+2025-08-09T12:38:33.639Z - 
+=== Logger Integration Started at 2025-08-09T12:38:33.625Z ===
+
+2025-08-09T12:38:33.641Z - Initialized with Terraform version: 1.9.0
+2025-08-09T12:38:35.665Z - [PRE-PLAN] Resource: time_sleep.wait (time_sleep) Provider: registry.terraform.io/hashicorp/time
+2025-08-09T12:38:35.673Z - [POST-PLAN] #1 ACTION=Create Resource: time_sleep.wait
+2025-08-09T12:38:35.673Z -   Type: time_sleep
+2025-08-09T12:38:35.673Z -   Provider: registry.terraform.io/hashicorp/time
+2025-08-09T12:38:35.673Z -   Creating new resource
+2025-08-09T12:38:35.675Z - [PRE-PLAN] Resource: random_uuid.test (random_uuid) Provider: registry.terraform.io/hashicorp/random
+2025-08-09T12:38:35.675Z - [PRE-PLAN] Resource: random_integer.test (random_integer) Provider: registry.terraform.io/hashicorp/random
+2025-08-09T12:38:35.675Z - [PRE-PLAN] Resource: random_string.test (random_string) Provider: registry.terraform.io/hashicorp/random
+2025-08-09T12:38:35.689Z - [POST-PLAN] #2 ACTION=Create Resource: random_uuid.test
+2025-08-09T12:38:35.689Z -   Type: random_uuid
+2025-08-09T12:38:35.689Z -   Provider: registry.terraform.io/hashicorp/random
+2025-08-09T12:38:35.689Z -   Creating new resource
+2025-08-09T12:38:35.689Z - [POST-PLAN] #3 ACTION=Create Resource: random_integer.test
+2025-08-09T12:38:35.689Z -   Type: random_integer
+2025-08-09T12:38:35.690Z -   Provider: registry.terraform.io/hashicorp/random
+2025-08-09T12:38:35.690Z -   Creating new resource
+2025-08-09T12:38:35.690Z - [POST-PLAN] #4 ACTION=Create Resource: random_string.test
+2025-08-09T12:38:35.690Z -   Type: random_string
+2025-08-09T12:38:35.690Z -   Provider: registry.terraform.io/hashicorp/random
+2025-08-09T12:38:35.690Z -   Creating new resource
+2025-08-09T12:38:35.695Z - [PRE-PLAN] Resource: terraform_data.test (terraform_data) Provider: terraform.io/builtin/terraform
+2025-08-09T12:38:35.695Z - [POST-PLAN] #5 ACTION=Create Resource: terraform_data.test
+2025-08-09T12:38:35.695Z -   Type: terraform_data
+2025-08-09T12:38:35.695Z -   Provider: terraform.io/builtin/terraform
+2025-08-09T12:38:35.695Z -   Creating new resource

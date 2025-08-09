@@ -135,6 +135,10 @@ func (b *Local) opPlan(
 	// Plan() may produce some diagnostic warnings which were already
 	// produced when setting up context above, so we deduplicate them here.
 	diags = diags.AppendWithoutDuplicates(planDiags...)
+	
+	// Phase 2: Call plan-stage-complete hook for integrations
+	// TODO: Phase 2 - Need to access integration manager to call operation-level hooks
+	// For now, operation-level hooks are implemented but not yet wired into the backend
 
 	// Even if there are errors we need to handle anything that may be
 	// contained within the plan, so only exit if there is no data at all.

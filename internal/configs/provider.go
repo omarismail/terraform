@@ -28,6 +28,9 @@ type Provider struct {
 	Config hcl.Body
 
 	DeclRange hcl.Range
+	
+	// Phase 2: Provider-level integrations
+	Integrations map[string]*Integration
 
 	// TODO: this may not be set in some cases, so it is not yet suitable for
 	// use outside of this package. We currently only use it for internal
@@ -70,10 +73,11 @@ func decodeProviderBlock(block *hcl.Block, testFile bool) (*Provider, hcl.Diagno
 	}
 
 	provider := &Provider{
-		Name:      name,
-		NameRange: block.LabelRanges[0],
-		Config:    config,
-		DeclRange: block.DefRange,
+		Name:         name,
+		NameRange:    block.LabelRanges[0],
+		Config:       config,
+		DeclRange:    block.DefRange,
+		Integrations: make(map[string]*Integration),
 
 		// We'll just explicitly mark real providers as not being mocks even
 		// though this is the default.
@@ -149,6 +153,51 @@ func decodeProviderBlock(block *hcl.Block, testFile bool) (*Provider, hcl.Diagno
 			// existing config we extracted earlier, so later decoding
 			// will see a blend of both.
 			provider.Config = hcl.MergeBodies([]hcl.Body{provider.Config, block.Body})
+
+		case "integration":
+			// Phase 2: Parse provider-scoped integrations
+			if len(block.Labels) < 1 {
+				diags = append(diags, &hcl.Diagnostic{
+					Severity: hcl.DiagError,
+					Summary:  "Missing integration name",
+					Detail:   "An integration block must have a name label.",
+					Subject:  &block.DefRange,
+				})
+				continue
+			}
+			
+			name := block.Labels[0]
+			integration := &Integration{
+				Name:        name,
+				DeclRange:   block.DefRange,
+				SourceRange: block.LabelRanges[0],
+			}
+			
+			intContent, remain, moreDiags := block.Body.PartialContent(&hcl.BodySchema{
+				Attributes: []hcl.AttributeSchema{
+					{Name: "source", Required: true},
+				},
+			})
+			diags = append(diags, moreDiags...)
+			
+			if attr, exists := intContent.Attributes["source"]; exists {
+				valDiags := gohcl.DecodeExpression(attr.Expr, nil, &integration.Source)
+				diags = append(diags, valDiags...)
+			}
+			
+			integration.Config = remain
+			
+			if existing, exists := provider.Integrations[name]; exists {
+				diags = append(diags, &hcl.Diagnostic{
+					Severity: hcl.DiagError,
+					Summary:  "Duplicate integration declaration",
+					Detail:   fmt.Sprintf("An integration named %q was already declared at %s.", existing.Name, existing.DeclRange),
+					Subject:  &block.DefRange,
+				})
+				continue
+			}
+			
+			provider.Integrations[name] = integration
 
 		default:
 			// All of the other block types in our schema are reserved for
@@ -276,6 +325,7 @@ var providerBlockSchema = &hcl.BodySchema{
 	},
 	Blocks: []hcl.BlockHeaderSchema{
 		{Type: "_"}, // meta-argument escaping block
+		{Type: "integration", LabelNames: []string{"name"}}, // Phase 2: Provider-scoped integrations
 
 		// The rest of these are reserved for future expansion.
 		{Type: "lifecycle"},

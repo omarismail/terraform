@@ -506,9 +506,16 @@ func (n *NodeAbstractResourceInstance) planDestroy(ctx EvalContext, currentState
 	}
 
 	// Call post-refresh hook
-	diags = diags.Append(ctx.Hook(func(h Hook) (HookAction, error) {
-		return h.PostDiff(n.HookResourceIdentity(), deposedKey, plans.Delete, currentState.Value, nullVal)
-	}))
+	diags = diags.Append(callPostDiffHooks(
+		ctx,
+		n.HookResourceIdentity(),
+		deposedKey,
+		plans.Delete,
+		currentState.Value,
+		nullVal,
+		n.Config,
+		cty.NilVal, // No config value during destroy
+	))
 	if diags.HasErrors() {
 		return plan, deferred, diags
 	}
@@ -1305,9 +1312,16 @@ func (n *NodeAbstractResourceInstance) plan(
 	}
 
 	// Call post-refresh hook
-	diags = diags.Append(ctx.Hook(func(h Hook) (HookAction, error) {
-		return h.PostDiff(n.HookResourceIdentity(), addrs.NotDeposed, action, priorVal, plannedNewVal)
-	}))
+	diags = diags.Append(callPostDiffHooks(
+		ctx,
+		n.HookResourceIdentity(),
+		addrs.NotDeposed,
+		action,
+		priorVal,
+		plannedNewVal,
+		&config,
+		origConfigVal,
+	))
 	if diags.HasErrors() {
 		return nil, nil, deferred, keyData, diags
 	}
@@ -1947,9 +1961,16 @@ func (n *NodeAbstractResourceInstance) planDataSource(ctx EvalContext, checkRule
 			Status: states.ObjectPlanned,
 		}
 
-		diags = diags.Append(ctx.Hook(func(h Hook) (HookAction, error) {
-			return h.PostDiff(n.HookResourceIdentity(), addrs.NotDeposed, plans.Read, priorVal, proposedNewVal)
-		}))
+		diags = diags.Append(callPostDiffHooks(
+			ctx,
+			n.HookResourceIdentity(),
+			addrs.NotDeposed,
+			plans.Read,
+			priorVal,
+			proposedNewVal,
+			&config,
+			configVal,
+		))
 
 		return plannedChange, plannedNewState, deferred, keyData, diags
 	}
