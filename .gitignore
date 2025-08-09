@@ -29,4 +29,4 @@ vendor/
 coverage.txt
 
 # IDEs
-.vscode/
+.vscode/terraform-integration
