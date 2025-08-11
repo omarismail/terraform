@@ -449,6 +449,10 @@ func (b *Local) opApply(
 		op.ReportResult(runningOp, diags)
 		return
 	}
+	
+	// Phase 2: Call apply-stage-complete hook for integrations
+	// TODO: Phase 2 - Need to access integration manager to call operation-level hooks
+	// For now, operation-level hooks are implemented but not yet wired into the backend
 
 	// If we've accumulated any warnings along the way then we'll show them
 	// here just before we show the summary and next steps. If we encountered

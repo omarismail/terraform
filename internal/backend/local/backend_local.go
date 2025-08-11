@@ -215,6 +215,35 @@ func (b *Local) localRunDirect(op *backendrun.Operation, run *backendrun.LocalRu
 	// snapshot, from the previous run.
 	run.InputState = s.State()
 
+	// Phase 1: Add integration support
+	// Start integration manager if there are integrations configured
+	if len(config.Module.Integrations) > 0 {
+		log.Printf("[INFO] Found %d integrations configured", len(config.Module.Integrations))
+		for name, integration := range config.Module.Integrations {
+			log.Printf("[INFO] Integration %q from source %q", name, integration.Source)
+		}
+		
+		intManager := terraform.NewIntegrationManager()
+		if err := intManager.StartIntegrations(config.Module.Integrations); err != nil {
+			diags = diags.Append(tfdiags.Sourceless(
+				tfdiags.Error,
+				"Failed to start integrations",
+				fmt.Sprintf("Error starting integration processes: %s", err),
+			))
+			return nil, nil, diags
+		}
+		
+		// Add integration hook to the hooks
+		intHook := terraform.NewIntegrationHook(intManager)
+		coreOpts.Hooks = append(coreOpts.Hooks, intHook)
+		
+		// Store the manager for cleanup
+		// TODO: Phase 2 will handle proper cleanup
+		log.Printf("[INFO] Integration manager started successfully")
+	} else {
+		log.Printf("[INFO] No integrations configured")
+	}
+
 	tfCtx, moreDiags := terraform.NewContext(coreOpts)
 	diags = diags.Append(moreDiags)
 	if moreDiags.HasErrors() {

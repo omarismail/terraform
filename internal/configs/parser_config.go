@@ -156,6 +156,14 @@ func parseConfigFile(body hcl.Body, diags hcl.Diagnostics, override, allowExperi
 						file.ProviderMetas = append(file.ProviderMetas, providerCfg)
 					}
 
+				case "integration":
+					// Phase 1: Basic integration support
+					integration, cfgDiags := decodeIntegrationBlock(innerBlock)
+					diags = append(diags, cfgDiags...)
+					if integration != nil {
+						file.Integrations = append(file.Integrations, integration)
+					}
+
 				default:
 					// Should never happen because the above cases should be exhaustive
 					// for all block type names in our schema.
@@ -400,6 +408,11 @@ var terraformBlockSchema = &hcl.BodySchema{
 		{
 			Type:       "provider_meta",
 			LabelNames: []string{"provider"},
+		},
+		// Phase 1: Basic integration support
+		{
+			Type:       "integration",
+			LabelNames: []string{"name"},
 		},
 	},
 }
