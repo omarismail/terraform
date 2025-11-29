@@ -299,6 +299,18 @@ func initCommands(
 			ShutdownCh:         meta.ShutdownCh,
 		}),
 
+		"runbook": func() (cli.Command, error) {
+			return &command.RunbookCommand{
+				Meta: meta,
+			}, nil
+		},
+
+		"runbook init": func() (cli.Command, error) {
+			return &command.RunbookInitCommand{
+				Meta: meta,
+			}, nil
+		},
+
 		"show": func() (cli.Command, error) {
 			return &command.ShowCommand{
 				Meta: meta,
