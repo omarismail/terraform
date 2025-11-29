@@ -1132,10 +1132,11 @@ func (m *Meta) backend_c_r_S(
 	// Get the backend type for output
 	backendType := s.Backend.Type
 
+	view := views.NewInit(vt, m.View)
 	if cloudMode == cloud.ConfigMigrationOut {
-		m.Ui.Output("Migrating from HCP Terraform or Terraform Enterprise to local state.")
+		view.Output(views.BackendCloudMigrateLocalMessage)
 	} else {
-		m.Ui.Output(fmt.Sprintf(strings.TrimSpace(outputBackendMigrateLocal), s.Backend.Type))
+		view.Output(views.BackendMigrateLocalMessage, s.Backend.Type)
 	}
 
 	// Grab a purely local backend to get the local state if it exists
@@ -1177,9 +1178,7 @@ func (m *Meta) backend_c_r_S(
 	}
 
 	if output {
-		m.Ui.Output(m.Colorize().Color(fmt.Sprintf(
-			"[reset][green]\n\n"+
-				strings.TrimSpace(successBackendUnset), backendType)))
+		view.Output(views.BackendConfiguredUnsetMessage, backendType)
 	}
 
 	// Return no backend
@@ -1348,8 +1347,8 @@ func (m *Meta) backend_C_r_s(c *configs.Backend, cHash int, sMgr *clistate.Local
 	// By now the backend is successfully configured.  If using HCP Terraform, the success
 	// message is handled as part of the final init message
 	if _, ok := b.(*cloud.Cloud); !ok {
-		m.Ui.Output(m.Colorize().Color(fmt.Sprintf(
-			"[reset][green]\n"+strings.TrimSpace(successBackendSet), s.Backend.Type)))
+		view := views.NewInit(vt, m.View)
+		view.Output(views.BackendConfiguredSuccessMessage, s.Backend.Type)
 	}
 
 	return b, diags
@@ -1377,23 +1376,19 @@ func (m *Meta) backend_C_r_S_changed(c *configs.Backend, cHash int, sMgr *clista
 
 	if output {
 		// Notify the user
+		view := views.NewInit(vt, m.View)
 		switch cloudMode {
 		case cloud.ConfigChangeInPlace:
-			m.Ui.Output("HCP Terraform configuration has changed.")
+			view.Output(views.BackendCloudChangeInPlaceMessage)
 		case cloud.ConfigMigrationIn:
-			m.Ui.Output(fmt.Sprintf("Migrating from backend %q to HCP Terraform.", s.Backend.Type))
+			view.Output(views.BackendMigrateToCloudMessage, s.Backend.Type)
 		case cloud.ConfigMigrationOut:
-			m.Ui.Output(fmt.Sprintf("Migrating from HCP Terraform to backend %q.", c.Type))
+			view.Output(views.BackendMigrateFromCloudMessage, c.Type)
 		default:
 			if s.Backend.Type != c.Type {
-				output := fmt.Sprintf(outputBackendMigrateChange, s.Backend.Type, c.Type)
-				m.Ui.Output(m.Colorize().Color(fmt.Sprintf(
-					"[reset]%s\n",
-					strings.TrimSpace(output))))
+				view.Output(views.BackendMigrateTypeChangeMessage, s.Backend.Type, c.Type)
 			} else {
-				m.Ui.Output(m.Colorize().Color(fmt.Sprintf(
-					"[reset]%s\n",
-					strings.TrimSpace(outputBackendReconfigure))))
+				view.Output(views.BackendReconfigureMessage)
 			}
 		}
 	}
@@ -1479,8 +1474,8 @@ func (m *Meta) backend_C_r_S_changed(c *configs.Backend, cHash int, sMgr *clista
 		// By now the backend is successfully configured.  If using HCP Terraform, the success
 		// message is handled as part of the final init message
 		if _, ok := b.(*cloud.Cloud); !ok {
-			m.Ui.Output(m.Colorize().Color(fmt.Sprintf(
-				"[reset][green]\n"+strings.TrimSpace(successBackendSet), s.Backend.Type)))
+			view := views.NewInit(vt, m.View)
+			view.Output(views.BackendConfiguredSuccessMessage, s.Backend.Type)
 		}
 	}
 
@@ -1866,7 +1861,8 @@ func (m *Meta) stateStore_c_S(ssSMgr *clistate.LocalState, viewType arguments.Vi
 	s := ssSMgr.State()
 	stateStoreType := s.StateStore.Type
 
-	m.Ui.Output(fmt.Sprintf(strings.TrimSpace(outputStateStoreMigrateLocal), stateStoreType))
+	view := views.NewInit(viewType, m.View)
+	view.Output(views.StateMigrateLocalMessage, stateStoreType)
 
 	// Grab a purely local backend to get the local state if it exists
 	localB, moreDiags := m.Backend(&BackendOpts{ForceLocal: true, Init: true})
@@ -1989,7 +1985,6 @@ func (m *Meta) savedStateStore(sMgr *clistate.LocalState) (backend.Backend, tfdi
 	// The provider and state store will be configured using the backend state file.
 
 	var diags tfdiags.Diagnostics
-	var b backend.Backend
 
 	s := sMgr.State()
 
@@ -2096,57 +2091,24 @@ func (m *Meta) savedStateStore(sMgr *clistate.LocalState) (backend.Backend, tfdi
 		return nil, diags
 	}
 
-	// Validate and configure the state store
-	//
-	// NOTE: there are no marks we need to remove at this point.
-	// We haven't added marks since the state store config from the backend state was used
-	// because the state store's config isn't going to be presented to the user via terminal output or diags.
-	validateStoreResp := provider.ValidateStateStoreConfig(providers.ValidateStateStoreConfigRequest{
-		TypeName: s.StateStore.Type,
-		Config:   stateStoreConfigVal,
-	})
-	diags = diags.Append(validateStoreResp.Diagnostics)
-	if diags.HasErrors() {
-		return nil, diags
-	}
-
-	cfgStoreResp := provider.ConfigureStateStore(providers.ConfigureStateStoreRequest{
-		TypeName: s.StateStore.Type,
-		Config:   stateStoreConfigVal,
-		Capabilities: providers.StateStoreClientCapabilities{
-			ChunkSize: backendPluggable.DefaultStateStoreChunkSize,
-		},
-	})
-	diags = diags.Append(cfgStoreResp.Diagnostics)
-	if diags.HasErrors() {
-		return nil, diags
-	}
-
-	chunkSize := cfgStoreResp.Capabilities.ChunkSize
-	if chunkSize == 0 || chunkSize > backendPluggable.MaxStateStoreChunkSize {
-		diags = diags.Append(fmt.Errorf("Failed to negotiate acceptable chunk size. "+
-			"Expected size > 0 and <= %d bytes, provider wants %d bytes",
-			backendPluggable.MaxStateStoreChunkSize, chunkSize,
-		))
-		return nil, diags
-	}
-
-	p, ok := provider.(providers.StateStoreChunkSizeSetter)
-	if !ok {
-		msg := fmt.Sprintf("Unable to set chunk size for provider %s; this is a bug in Terraform - please report it", s.StateStore.Type)
-		panic(msg)
-	}
-	// casting to int here is okay because the number should never exceed int32
-	p.SetStateStoreChunkSize(s.StateStore.Type, int(chunkSize))
-
-	// Now we have a fully configured state store, ready to be used.
-	// To make it usable we need to return it in a backend.Backend interface.
-	b, err = backendPluggable.NewPluggable(provider, s.StateStore.Type)
+	// Now that the provider is configured we can begin using the state store through
+	// the backend.Backend interface.
+	p, err := backendPluggable.NewPluggable(provider, s.StateStore.Type)
 	if err != nil {
 		diags = diags.Append(err)
 	}
 
-	return b, diags
+	// Validate and configure the state store
+	//
+	// Note: we do not use the value returned from PrepareConfig for state stores,
+	// however that old approach is still used with backends for compatibility reasons.
+	_, validateDiags := p.PrepareConfig(stateStoreConfigVal)
+	diags = diags.Append(validateDiags)
+
+	configureDiags := p.Configure(stateStoreConfigVal)
+	diags = diags.Append(configureDiags)
+
+	return p, diags
 }
 
 //-------------------------------------------------------------------
@@ -2371,58 +2333,24 @@ func (m *Meta) stateStoreInitFromConfig(c *configs.StateStore, locks *depsfile.L
 		return nil, cty.NilVal, cty.NilVal, diags
 	}
 
-	// Validate state store config and configure the state store
-	//
-	// NOTE: there are no marks we need to remove at this point.
-	// We haven't added marks since the provider config from the backend state was used
-	// because the state-storage provider's config isn't going to be presented to the user via terminal output or diags.
-	validateStoreResp := provider.ValidateStateStoreConfig(providers.ValidateStateStoreConfigRequest{
-		TypeName: c.Type,
-		Config:   stateStoreConfigVal,
-	})
-	diags = diags.Append(validateStoreResp.Diagnostics)
-	if validateStoreResp.Diagnostics.HasErrors() {
-		return nil, cty.NilVal, cty.NilVal, diags
-	}
-
-	cfgStoreResp := provider.ConfigureStateStore(providers.ConfigureStateStoreRequest{
-		TypeName: c.Type,
-		Config:   stateStoreConfigVal,
-		Capabilities: providers.StateStoreClientCapabilities{
-			ChunkSize: backendPluggable.DefaultStateStoreChunkSize,
-		},
-	})
-	diags = diags.Append(cfgStoreResp.Diagnostics)
-	if cfgStoreResp.Diagnostics.HasErrors() {
-		return nil, cty.NilVal, cty.NilVal, diags
-	}
-
-	chunkSize := cfgStoreResp.Capabilities.ChunkSize
-	if chunkSize == 0 || chunkSize > backendPluggable.MaxStateStoreChunkSize {
-		diags = diags.Append(fmt.Errorf("Failed to negotiate acceptable chunk size. "+
-			"Expected size > 0 and <= %d bytes, provider wants %d bytes",
-			backendPluggable.MaxStateStoreChunkSize, chunkSize,
-		))
-		return nil, cty.NilVal, cty.NilVal, diags
-	}
-
-	p, ok := provider.(providers.StateStoreChunkSizeSetter)
-	if !ok {
-		msg := fmt.Sprintf("Unable to set chunk size for provider %s; this is a bug in Terraform - please report it", c.Type)
-		panic(msg)
-	}
-	// casting to int here is okay because the number should never exceed int32
-	p.SetStateStoreChunkSize(c.Type, int(chunkSize))
-
-	// Now we have a fully configured state store, ready to be used.
-	// To make it usable we need to return it in a backend.Backend interface.
-	b, err := backendPluggable.NewPluggable(provider, c.Type)
+	// Now that the provider is configured we can begin using the state store through
+	// the backend.Backend interface.
+	p, err := backendPluggable.NewPluggable(provider, c.Type)
 	if err != nil {
 		diags = diags.Append(err)
-		return nil, cty.NilVal, cty.NilVal, diags
 	}
 
-	return b, stateStoreConfigVal, providerConfigVal, diags
+	// Validate and configure the state store
+	//
+	// Note: we do not use the value returned from PrepareConfig for state stores,
+	// however that old approach is still used with backends for compatibility reasons.
+	_, validateDiags := p.PrepareConfig(stateStoreConfigVal)
+	diags = diags.Append(validateDiags)
+
+	configureDiags := p.Configure(stateStoreConfigVal)
+	diags = diags.Append(configureDiags)
+
+	return p, stateStoreConfigVal, providerConfigVal, diags
 }
 
 // Helper method to get aliases from the enhanced backend and alias them
@@ -2625,25 +2553,6 @@ func (m *Meta) StateStoreProviderFactoryFromConfigState(cfgState *workdir.StateS
 // Output constants and initialization code
 //-------------------------------------------------------------------
 
-const outputBackendMigrateChange = `
-Terraform detected that the backend type changed from %q to %q.
-`
-
-const outputBackendMigrateLocal = `
-Terraform has detected you're unconfiguring your previously set %q backend.
-`
-
-const outputStateStoreMigrateLocal = `
-Terraform has detected you're unconfiguring your previously set %q state store.
-`
-
-const outputBackendReconfigure = `
-[reset][bold]Backend configuration changed![reset]
-
-Terraform has detected that the configuration specified for the backend
-has changed. Terraform will now check for existing state in the backends.
-`
-
 const inputCloudInitCreateWorkspace = `
 There are no workspaces with the configured tags (%s)
 in your HCP Terraform organization. To finish initializing, Terraform needs at
@@ -2651,13 +2560,4 @@ least one workspace available.
 
 Terraform can create a properly tagged workspace for you now. Please enter a
 name to create a new HCP Terraform workspace.
-`
-
-const successBackendUnset = `
-Successfully unset the backend %q. Terraform will now operate locally.
-`
-
-const successBackendSet = `
-Successfully configured the backend %q! Terraform will automatically
-use this backend unless the backend configuration changes.
 `
