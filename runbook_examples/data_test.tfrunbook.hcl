@@ -1,9 +1,13 @@
-
-
-provider "local" {
-  # Configuration options
+terraform {
+  required_providers {
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.5"
+    }
+  }
 }
 
+provider "local" {}
 
 runbook "data_test" {
   step "read_file" {

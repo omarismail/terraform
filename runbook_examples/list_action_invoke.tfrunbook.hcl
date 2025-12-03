@@ -31,9 +31,5 @@ runbook "list_action_invoke" {
             for_each = list.aws_instance.example
             value = each.value.identity.id
         }
-        output "ec2_instance_name" {
-            for_each = list.aws_instance.example
-            value = each.value.display_name
-        }
     }
 }

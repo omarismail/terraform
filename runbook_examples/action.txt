@@ -1,1 +1,1 @@
-text from the script into a new file
+written by args: fo bar

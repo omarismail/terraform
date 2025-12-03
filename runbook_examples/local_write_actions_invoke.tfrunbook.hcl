@@ -1,8 +1,24 @@
 
-provider "local" {
+terraform {
+  required_providers {
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.5"
+    }
+  }
 }
 
-runbook "test_actions_invoke" {
+provider "local" {}
+
+variable "value1" {
+  type    = string
+}
+
+variable "value2" {
+  type    = string
+}
+
+runbook "local_write_actions_invoke" {
   step "read_file" {
     data "local_file" "foo" {
       filename = "foo.txt"
@@ -17,10 +33,10 @@ runbook "test_actions_invoke" {
     action "local_command" "bash_example" {
       config {
         command   = "bash"
-        arguments = ["example_script.sh", "arg1", "arg2"]
+        arguments = ["example_script.sh", var.value1, var.value2]
         stdin = jsonencode({
-          "key1" : "value1"
-          "key2" : "value2"
+          "key1" : var.value1
+          "key2" : var.value2
         })
       }
     }
