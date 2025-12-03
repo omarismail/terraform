@@ -1,1 +1,1 @@
-written by args: fo bar
+written by args: foo bar

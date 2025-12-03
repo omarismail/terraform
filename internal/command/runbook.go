@@ -167,6 +167,7 @@ func (c *RunbookCommand) Run(args []string) int {
 	var foundRunbook *RunbookConfig
 	var variables []VariableConfig
 	providerConfigs := make(map[string]hcl.Body) // provider name -> config body
+	var foundInFile string // track which file contains the runbook
 
 	for _, file := range filesToParse {
 		content, err := ioutil.ReadFile(file)
@@ -188,13 +189,7 @@ func (c *RunbookCommand) Run(args []string) int {
 			return 1
 		}
 
-		variables = append(variables, runbookFile.Variables...)
-
-		// Collect provider configurations
-		for _, p := range runbookFile.Providers {
-			providerConfigs[p.Name] = p.Body
-		}
-
+		// Check if this file contains the runbook we're looking for
 		for _, rb := range runbookFile.Runbooks {
 			if rb.Name == runbookName {
 				if foundRunbook != nil {
@@ -205,9 +200,18 @@ func (c *RunbookCommand) Run(args []string) int {
 				// but here we just copy the struct.
 				rbCopy := rb
 				foundRunbook = &rbCopy
+				foundInFile = file
+
+				// Only collect variables and providers from the file containing the runbook
+				variables = append(variables, runbookFile.Variables...)
+				for _, p := range runbookFile.Providers {
+					providerConfigs[p.Name] = p.Body
+				}
 			}
 		}
 	}
+
+	_ = foundInFile // silence unused variable warning if not used elsewhere
 
 	if foundRunbook == nil {
 		c.Ui.Error(fmt.Sprintf("Runbook '%s' not found.", runbookName))
