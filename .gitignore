@@ -26,3 +26,8 @@ coverage.txt
 # IDEs
 .vscode/
 .zed/
+.terraform/
+runbook_examples/.terraform/
+runbook_examples/terraform
+runbook_examples/.aws
+runbook_examples/runbooks.pem

@@ -34,16 +34,29 @@ type RunbookConfig struct {
 type StepConfig struct {
 	Name    string         `hcl:"name,label"`
 	Data    []DataConfig   `hcl:"data,block"`
+	List    []ListConfig   `hcl:"list,block"`
 	Outputs []OutputConfig `hcl:"output,block"`
 	Actions []ActionConfig `hcl:"action,block"`
 	Invoke  *InvokeConfig  `hcl:"invoke,block"`
 }
 
+type ListConfig struct {
+	Type        string           `hcl:"type,label"`
+	Name        string           `hcl:"name,label"`
+	ConfigBlock *ListConfigBlock `hcl:"config,block"`
+	Remain      hcl.Body         `hcl:",remain"`
+}
+
+type ListConfigBlock struct {
+	Body hcl.Body `hcl:",remain"`
+}
+
 type ActionConfig struct {
-	Type        string              `hcl:"type,label"`
-	Name        string              `hcl:"name,label"`
-	ConfigBlock *ActionConfigBlock  `hcl:"config,block"`
-	Remain      hcl.Body            `hcl:",remain"`
+	Type        string             `hcl:"type,label"`
+	Name        string             `hcl:"name,label"`
+	ForEach     hcl.Expression     `hcl:"for_each,optional"`
+	ConfigBlock *ActionConfigBlock `hcl:"config,block"`
+	Remain      hcl.Body           `hcl:",remain"`
 }
 
 type ActionConfigBlock struct {
@@ -62,6 +75,7 @@ type DataConfig struct {
 
 type OutputConfig struct {
 	Name        string         `hcl:"name,label"`
+	ForEach     hcl.Expression `hcl:"for_each,optional"`
 	Description string         `hcl:"description,optional"`
 	Value       hcl.Expression `hcl:"value"`
 }
@@ -81,10 +95,15 @@ type ProviderConfig struct {
 	Body hcl.Body `hcl:",remain"`
 }
 
+type TerraformConfig struct {
+	Body hcl.Body `hcl:",remain"`
+}
+
 type RunbookFile struct {
-	Runbooks  []RunbookConfig  `hcl:"runbook,block"`
-	Variables []VariableConfig `hcl:"variable,block"`
-	Providers []ProviderConfig `hcl:"provider,block"`
+	Terraform []TerraformConfig `hcl:"terraform,block"`
+	Runbooks  []RunbookConfig   `hcl:"runbook,block"`
+	Variables []VariableConfig  `hcl:"variable,block"`
+	Providers []ProviderConfig  `hcl:"provider,block"`
 }
 
 func (c *RunbookCommand) Run(args []string) int {
@@ -147,6 +166,7 @@ func (c *RunbookCommand) Run(args []string) int {
 
 	var foundRunbook *RunbookConfig
 	var variables []VariableConfig
+	providerConfigs := make(map[string]hcl.Body) // provider name -> config body
 
 	for _, file := range filesToParse {
 		content, err := ioutil.ReadFile(file)
@@ -169,7 +189,11 @@ func (c *RunbookCommand) Run(args []string) int {
 		}
 
 		variables = append(variables, runbookFile.Variables...)
-		// providers = append(providers, runbookFile.Providers...)
+
+		// Collect provider configurations
+		for _, p := range runbookFile.Providers {
+			providerConfigs[p.Name] = p.Body
+		}
 
 		for _, rb := range runbookFile.Runbooks {
 			if rb.Name == runbookName {
@@ -290,23 +314,40 @@ func (c *RunbookCommand) Run(args []string) int {
 				return 1
 			}
 
-			// 3. Configure provider (empty config for now)
-			// In a real implementation, we would use the provider configuration from the runbook
-			resp := provider.ConfigureProvider(providers.ConfigureProviderRequest{
-				Config: cty.EmptyObjectVal,
-			})
-			if resp.Diagnostics.HasErrors() {
-				c.Ui.Error(fmt.Sprintf("Error configuring provider %s: %s", providerName, resp.Diagnostics.Err()))
-				return 1
-			}
-
-			// 4. Get schema and decode config
+			// 3. Get provider schema first (needed to decode provider config)
 			schemaResp := provider.GetProviderSchema()
 			if schemaResp.Diagnostics.HasErrors() {
 				c.Ui.Error(fmt.Sprintf("Error getting provider schema for %s: %s", providerName, schemaResp.Diagnostics.Err()))
 				return 1
 			}
 
+			// 4. Configure provider using config from runbook file
+			var providerConfigVal cty.Value
+			if providerConfigBody, ok := providerConfigs[providerName]; ok && schemaResp.Provider.Body != nil {
+				// Decode the provider config using the provider's schema
+				spec := schemaResp.Provider.Body.DecoderSpec()
+				var diags hcl.Diagnostics
+				providerConfigVal, diags = hcldec.Decode(providerConfigBody, spec, evalCtx)
+				if diags.HasErrors() {
+					c.Ui.Error(fmt.Sprintf("Error decoding provider config for %s: %s", providerName, diags.Error()))
+					return 1
+				}
+			} else if schemaResp.Provider.Body != nil {
+				// Use schema's EmptyValue to create a proper config object with all attributes set to null
+				providerConfigVal = schemaResp.Provider.Body.EmptyValue()
+			} else {
+				providerConfigVal = cty.EmptyObjectVal
+			}
+
+			resp := provider.ConfigureProvider(providers.ConfigureProviderRequest{
+				Config: providerConfigVal,
+			})
+			if resp.Diagnostics.HasErrors() {
+				c.Ui.Error(fmt.Sprintf("Error configuring provider %s: %s", providerName, resp.Diagnostics.Err()))
+				return 1
+			}
+
+			// 5. Get data source schema
 			dsSchema, ok := schemaResp.DataSources[data.Type]
 			if !ok {
 				c.Ui.Error(fmt.Sprintf("Data source type not found in provider schema: %s", data.Type))
@@ -350,6 +391,139 @@ func (c *RunbookCommand) Run(args []string) int {
 				newVars[k] = v
 			}
 			newVars["data"] = cty.ObjectVal(dataObj)
+			evalCtx.Variables = newVars
+		}
+
+		// Process list blocks
+		// We maintain a map of type -> name -> value
+		listVars := make(map[string]map[string]cty.Value)
+
+		for _, list := range step.List {
+			// 1. Determine provider from list type (e.g., "aws_instance" -> "aws" provider)
+			parts := strings.SplitN(list.Type, "_", 2)
+			if len(parts) < 2 {
+				c.Ui.Error(fmt.Sprintf("Invalid list resource type: %s", list.Type))
+				return 1
+			}
+			providerName := parts[0]
+
+			// 2. Instantiate provider
+			factories, err := c.Meta.ProviderFactories()
+			if err != nil {
+				c.Ui.Error(fmt.Sprintf("Error getting provider factories: %s", err))
+				return 1
+			}
+
+			providerFactory, ok := factories[addrs.NewDefaultProvider(providerName)]
+			if !ok {
+				c.Ui.Error(fmt.Sprintf("Provider not found: %s", providerName))
+				return 1
+			}
+
+			provider, err := providerFactory()
+			if err != nil {
+				c.Ui.Error(fmt.Sprintf("Error instantiating provider %s: %s", providerName, err))
+				return 1
+			}
+			defer provider.Close()
+
+			// 3. Get provider schema first (needed to decode provider config)
+			schemaResp := provider.GetProviderSchema()
+			if schemaResp.Diagnostics.HasErrors() {
+				c.Ui.Error(fmt.Sprintf("Error getting provider schema for %s: %s", providerName, schemaResp.Diagnostics.Err()))
+				return 1
+			}
+
+			// 4. Configure provider using config from runbook file
+			var providerConfigVal cty.Value
+			if providerConfigBody, ok := providerConfigs[providerName]; ok && schemaResp.Provider.Body != nil {
+				// Decode the provider config using the provider's schema
+				spec := schemaResp.Provider.Body.DecoderSpec()
+				var diags hcl.Diagnostics
+				providerConfigVal, diags = hcldec.Decode(providerConfigBody, spec, evalCtx)
+				if diags.HasErrors() {
+					c.Ui.Error(fmt.Sprintf("Error decoding provider config for %s: %s", providerName, diags.Error()))
+					return 1
+				}
+			} else if schemaResp.Provider.Body != nil {
+				// Use schema's EmptyValue to create a proper config object with all attributes set to null
+				// This is what Terraform does when there's no explicit provider config
+				providerConfigVal = schemaResp.Provider.Body.EmptyValue()
+			} else {
+				providerConfigVal = cty.EmptyObjectVal
+			}
+
+			resp := provider.ConfigureProvider(providers.ConfigureProviderRequest{
+				Config: providerConfigVal,
+			})
+			if resp.Diagnostics.HasErrors() {
+				c.Ui.Error(fmt.Sprintf("Error configuring provider %s: %s", providerName, resp.Diagnostics.Err()))
+				return 1
+			}
+
+			// 5. Get list resource schema
+			listSchema := schemaResp.SchemaForListResourceType(list.Type)
+			if listSchema.IsNil() {
+				c.Ui.Error(fmt.Sprintf("List resource type not found in provider schema: %s", list.Type))
+				return 1
+			}
+
+			// 5. Build the config value for the list resource
+			// The provider expects a config value with a nested "config" attribute
+			var configBlockVal cty.Value
+			if list.ConfigBlock != nil && listSchema.ConfigSchema != nil {
+				// Decode the config block if present
+				spec := listSchema.ConfigSchema.DecoderSpec()
+				var diags hcl.Diagnostics
+				configBlockVal, diags = hcldec.Decode(list.ConfigBlock.Body, spec, evalCtx)
+				if diags.HasErrors() {
+					c.Ui.Error(fmt.Sprintf("Error decoding config for list %s.%s: %s", list.Type, list.Name, diags.Error()))
+					return 1
+				}
+			} else if listSchema.ConfigSchema != nil {
+				// Use empty config if no config block provided
+				configBlockVal = listSchema.ConfigSchema.EmptyValue()
+			} else {
+				configBlockVal = cty.EmptyObjectVal
+			}
+
+			// Build the full config value with nested "config" attribute
+			configVal := cty.ObjectVal(map[string]cty.Value{
+				"config": configBlockVal,
+			})
+
+			c.Ui.Output(fmt.Sprintf("  Listing %s.%s...", list.Type, list.Name))
+
+			// 6. Call ListResource
+			listResp := provider.ListResource(providers.ListResourceRequest{
+				TypeName:              list.Type,
+				Config:                configVal,
+				IncludeResourceObject: false,
+				Limit:                 100, // Default limit
+			})
+			if listResp.Diagnostics.HasErrors() {
+				c.Ui.Error(fmt.Sprintf("Error listing %s.%s: %s", list.Type, list.Name, listResp.Diagnostics.Err()))
+				return 1
+			}
+
+			// 7. Store result in list variables
+			if _, ok := listVars[list.Type]; !ok {
+				listVars[list.Type] = make(map[string]cty.Value)
+			}
+			listVars[list.Type][list.Name] = listResp.Result
+
+			// Update evalCtx with new list variables
+			listObj := make(map[string]cty.Value)
+			for k, v := range listVars {
+				listObj[k] = cty.ObjectVal(v)
+			}
+
+			// Update the "list" variable in the context
+			newVars := make(map[string]cty.Value)
+			for k, v := range evalCtx.Variables {
+				newVars[k] = v
+			}
+			newVars["list"] = cty.ObjectVal(listObj)
 			evalCtx.Variables = newVars
 		}
 
@@ -414,9 +588,7 @@ func (c *RunbookCommand) Run(args []string) int {
 				actionType := actionRef.GetAttr("type").AsString()
 				actionName := actionRef.GetAttr("name").AsString()
 
-				c.Ui.Output(fmt.Sprintf("  Invoking action: %s.%s", actionType, actionName))
-
-				// Find and execute the action
+				// Find the action config
 				actionTypeConfigs, ok := actionConfigs[actionType]
 				if !ok {
 					c.Ui.Error(fmt.Sprintf("Action type not found: %s", actionType))
@@ -429,33 +601,147 @@ func (c *RunbookCommand) Run(args []string) int {
 					return 1
 				}
 
-				// Execute the action based on its type
-				if err := c.executeAction(actionType, actionName, actionConfig, evalCtx); err != nil {
-					c.Ui.Error(fmt.Sprintf("Error executing action %s.%s: %s", actionType, actionName, err))
-					return 1
+				// Check if action has for_each (not just a nil-ish expression)
+				hasForEach := false
+				var forEachVal cty.Value
+				if actionConfig.ForEach != nil {
+					var diags hcl.Diagnostics
+					forEachVal, diags = actionConfig.ForEach.Value(evalCtx)
+					if !diags.HasErrors() && !forEachVal.IsNull() {
+						hasForEach = true
+					}
+				}
+
+				if hasForEach {
+					// Handle the result - it could be a list/tuple, map/object, or an object with "data" attribute
+					var iterableVal cty.Value
+					if forEachVal.Type().IsObjectType() && forEachVal.Type().HasAttribute("data") {
+						// This is likely a list resource result with a "data" attribute
+						iterableVal = forEachVal.GetAttr("data")
+					} else {
+						iterableVal = forEachVal
+					}
+
+					if !iterableVal.CanIterateElements() {
+						c.Ui.Error(fmt.Sprintf("for_each value for action %s.%s is not iterable", actionType, actionName))
+						return 1
+					}
+
+					// Iterate over each element and invoke the action
+					idx := 0
+					for elemIt := iterableVal.ElementIterator(); elemIt.Next(); {
+						key, val := elemIt.Element()
+
+						c.Ui.Output(fmt.Sprintf("  Invoking action: %s.%s[%d]", actionType, actionName, idx))
+
+						// Create a child eval context with each.key and each.value
+						childCtx := evalCtx.NewChild()
+						childCtx.Variables = map[string]cty.Value{
+							"each": cty.ObjectVal(map[string]cty.Value{
+								"key":   key,
+								"value": val,
+							}),
+						}
+
+						// Execute the action with the child context
+						if err := c.executeAction(actionType, actionName, actionConfig, childCtx, providerConfigs); err != nil {
+							c.Ui.Error(fmt.Sprintf("Error executing action %s.%s[%d]: %s", actionType, actionName, idx, err))
+							return 1
+						}
+						idx++
+					}
+				} else {
+					c.Ui.Output(fmt.Sprintf("  Invoking action: %s.%s", actionType, actionName))
+
+					// Execute the action based on its type
+					if err := c.executeAction(actionType, actionName, actionConfig, evalCtx, providerConfigs); err != nil {
+						c.Ui.Error(fmt.Sprintf("Error executing action %s.%s: %s", actionType, actionName, err))
+						return 1
+					}
 				}
 			}
 		}
 
 		for _, output := range step.Outputs {
-			val, diags := output.Value.Value(evalCtx)
-			if diags.HasErrors() {
-				c.Ui.Error(fmt.Sprintf("Error evaluating output %s: %s", output.Name, diags.Error()))
-				return 1
+			// Check if for_each is actually specified (not just a nil-ish expression)
+			hasForEach := false
+			var forEachVal cty.Value
+			if output.ForEach != nil {
+				var diags hcl.Diagnostics
+				forEachVal, diags = output.ForEach.Value(evalCtx)
+				if !diags.HasErrors() && !forEachVal.IsNull() {
+					hasForEach = true
+				}
 			}
 
-			// Convert val to string for display
-			var valStr string
-			if val.Type() == cty.String {
-				valStr = val.AsString()
+			if hasForEach {
+				// Handle the result - it could be a list/tuple, map/object, or an object with "data" attribute
+				var iterableVal cty.Value
+				if forEachVal.Type().IsObjectType() && forEachVal.Type().HasAttribute("data") {
+					// This is likely a list resource result with a "data" attribute
+					iterableVal = forEachVal.GetAttr("data")
+				} else {
+					iterableVal = forEachVal
+				}
+
+				if !iterableVal.CanIterateElements() {
+					c.Ui.Error(fmt.Sprintf("for_each value for output %s is not iterable", output.Name))
+					return 1
+				}
+
+				// Iterate over each element
+				idx := 0
+				for it := iterableVal.ElementIterator(); it.Next(); {
+					key, val := it.Element()
+
+					// Create a child eval context with each.key and each.value
+					childCtx := evalCtx.NewChild()
+					childCtx.Variables = map[string]cty.Value{
+						"each": cty.ObjectVal(map[string]cty.Value{
+							"key":   key,
+							"value": val,
+						}),
+					}
+
+					// Evaluate the value expression in the child context
+					outputVal, diags := output.Value.Value(childCtx)
+					if diags.HasErrors() {
+						c.Ui.Error(fmt.Sprintf("Error evaluating output %s[%d]: %s", output.Name, idx, diags.Error()))
+						return 1
+					}
+
+					// Convert val to string for display
+					var valStr string
+					if outputVal.Type() == cty.String {
+						valStr = outputVal.AsString()
+					} else {
+						valStr = outputVal.GoString()
+					}
+
+					c.Ui.Output(fmt.Sprintf("%s[%d] = %s", output.Name, idx, valStr))
+					idx++
+				}
 			} else {
-				// Simple fallback for non-string values
-				valStr = val.GoString()
-			}
+				// Standard output without for_each
+				val, diags := output.Value.Value(evalCtx)
+				if diags.HasErrors() {
+					c.Ui.Error(fmt.Sprintf("Error evaluating output %s: %s", output.Name, diags.Error()))
+					return 1
+				}
 
-			c.Ui.Output(fmt.Sprintf("%s = %s", output.Name, valStr))
-			if output.Description != "" {
-				c.Ui.Output(fmt.Sprintf("    (%s)", output.Description))
+				// Convert val to string for display
+				var valStr string
+				if val.Type() == cty.String {
+					valStr = val.AsString()
+				} else {
+					// Simple fallback for non-string values
+					valStr = val.GoString()
+				}
+
+				c.Ui.Output(fmt.Sprintf("%s = %s", output.Name, valStr))
+				if output.Description != "" {
+					c.Ui.Output(fmt.Sprintf("    (%s)", output.Description))
+				}
 			}
 		}
 	}
@@ -464,7 +750,7 @@ func (c *RunbookCommand) Run(args []string) int {
 }
 
 // executeAction executes a single action using the provider's action system
-func (c *RunbookCommand) executeAction(actionType, actionName string, action ActionConfig, evalCtx *hcl.EvalContext) error {
+func (c *RunbookCommand) executeAction(actionType, actionName string, action ActionConfig, evalCtx *hcl.EvalContext, providerConfigs map[string]hcl.Body) error {
 	// 1. Determine provider from action type (e.g., "local_command" -> "local" provider)
 	parts := strings.SplitN(actionType, "_", 2)
 	if len(parts) < 2 {
@@ -489,18 +775,43 @@ func (c *RunbookCommand) executeAction(actionType, actionName string, action Act
 	}
 	defer provider.Close()
 
-	// 3. Configure provider (empty config for now)
-	configResp := provider.ConfigureProvider(providers.ConfigureProviderRequest{
-		Config: cty.EmptyObjectVal,
-	})
-	if configResp.Diagnostics.HasErrors() {
-		return fmt.Errorf("error configuring provider %s: %s", providerName, configResp.Diagnostics.Err())
-	}
-
-	// 4. Get action schema from provider
+	// 3. Get provider schema first (needed to decode provider config)
 	schemaResp := provider.GetProviderSchema()
 	if schemaResp.Diagnostics.HasErrors() {
 		return fmt.Errorf("error getting provider schema for %s: %s", providerName, schemaResp.Diagnostics.Err())
+	}
+
+	// 4. Configure provider using config from runbook file
+	var providerConfigVal cty.Value
+	if providerConfigBody, ok := providerConfigs[providerName]; ok && schemaResp.Provider.Body != nil {
+		// Decode the provider config using the provider's schema
+		spec := schemaResp.Provider.Body.DecoderSpec()
+		providerConfigVal, diags := hcldec.Decode(providerConfigBody, spec, evalCtx)
+		if diags.HasErrors() {
+			return fmt.Errorf("error decoding provider config for %s: %s", providerName, diags.Error())
+		}
+		configResp := provider.ConfigureProvider(providers.ConfigureProviderRequest{
+			Config: providerConfigVal,
+		})
+		if configResp.Diagnostics.HasErrors() {
+			return fmt.Errorf("error configuring provider %s: %s", providerName, configResp.Diagnostics.Err())
+		}
+	} else if schemaResp.Provider.Body != nil {
+		// Use schema's EmptyValue to create a proper config object with all attributes set to null
+		providerConfigVal = schemaResp.Provider.Body.EmptyValue()
+		configResp := provider.ConfigureProvider(providers.ConfigureProviderRequest{
+			Config: providerConfigVal,
+		})
+		if configResp.Diagnostics.HasErrors() {
+			return fmt.Errorf("error configuring provider %s: %s", providerName, configResp.Diagnostics.Err())
+		}
+	} else {
+		configResp := provider.ConfigureProvider(providers.ConfigureProviderRequest{
+			Config: cty.EmptyObjectVal,
+		})
+		if configResp.Diagnostics.HasErrors() {
+			return fmt.Errorf("error configuring provider %s: %s", providerName, configResp.Diagnostics.Err())
+		}
 	}
 
 	actionSchema, ok := schemaResp.Actions[actionType]
