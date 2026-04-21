@@ -44,6 +44,19 @@ func TestNormalizeProvidersSchemaKind(t *testing.T) {
 	}
 }
 
+func TestNormalizeProvidersSchemaKind_unknown(t *testing.T) {
+	_, diags := normalizeProvidersSchemaKind("widgets")
+	if !diags.HasErrors() {
+		t.Fatal("expected an unknown kind diagnostic")
+	}
+	if got, want := diags[0].Description().Summary, "Unknown schema kind"; got != want {
+		t.Fatalf("wrong diagnostic summary %q; want %q", got, want)
+	}
+	if detail := diags[0].Description().Detail; !strings.Contains(detail, "provider, resource, data-source") {
+		t.Fatalf("expected canonical kind list in detail, got: %s", detail)
+	}
+}
+
 func TestResolveProvidersSchemaProviderSelector(t *testing.T) {
 	aws := addrs.NewDefaultProvider("aws")
 	amazon := addrs.MustParseProviderSourceString("registry.terraform.io/acme/aws")
@@ -200,6 +213,19 @@ func TestFilterSingleProviderSchema_nameSuggestion(t *testing.T) {
 	}
 	if detail := diags[0].Description().Detail; !strings.Contains(detail, `Did you mean "test_instance"?`) {
 		t.Fatalf("expected suggestion in detail, got: %s", detail)
+	}
+}
+
+func TestFilterSingleProviderSchema_providerKindRejectsName(t *testing.T) {
+	providerAddr := addrs.NewDefaultProvider("test")
+	provider := testProvidersSchemaJSONProvider()
+
+	_, diags := filterSingleProviderSchema(providerAddr, provider, providersSchemaKindProvider, "test_instance")
+	if !diags.HasErrors() {
+		t.Fatal("expected an error diagnostic")
+	}
+	if got, want := diags[0].Description().Summary, "Unexpected schema name selector"; got != want {
+		t.Fatalf("wrong diagnostic summary %q; want %q", got, want)
 	}
 }
 

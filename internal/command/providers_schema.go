@@ -11,6 +11,8 @@ import (
 	"github.com/hashicorp/terraform/internal/backend/backendrun"
 	"github.com/hashicorp/terraform/internal/command/arguments"
 	"github.com/hashicorp/terraform/internal/command/jsonprovider"
+	"github.com/hashicorp/terraform/internal/configs"
+	"github.com/hashicorp/terraform/internal/terraform"
 	"github.com/hashicorp/terraform/internal/tfdiags"
 )
 
@@ -105,40 +107,48 @@ func (c *ProvidersSchemaCommand) Run(args []string) int {
 		return 1
 	}
 
-	var jsonSchemas []byte
-	if parsedArgs.ProviderSelector == "" && parsedArgs.KindSelector == "" && parsedArgs.NameSelector == "" {
-		jsonSchemas, err = jsonprovider.Marshal(schemas)
-		if err != nil {
-			c.Ui.Error(fmt.Sprintf("Failed to marshal provider schemas to json: %s", err))
-			return 1
-		}
-	} else {
-		renderedSchemas := jsonprovider.MarshalForRenderer(schemas)
-		filteredSchemas, filterDiags := filterProvidersSchemaJSON(parsedArgs, schemas.Providers, lr.Config, renderedSchemas)
-		diags = diags.Append(filterDiags)
-		if filterDiags.HasErrors() {
-			c.showDiagnostics(diags)
-			return 1
-		}
-
-		jsonSchemas, err = json.Marshal(&jsonprovider.Providers{
-			FormatVersion: jsonprovider.FormatVersion,
-			Schemas:       filteredSchemas,
-		})
-		if err != nil {
-			c.Ui.Error(fmt.Sprintf("Failed to marshal provider schemas to json: %s", err))
-			return 1
-		}
+	jsonSchemas, marshalDiags, err := marshalProvidersSchemaOutput(parsedArgs, schemas, lr.Config)
+	diags = diags.Append(marshalDiags)
+	if marshalDiags.HasErrors() {
+		c.showDiagnostics(diags)
+		return 1
+	}
+	if err != nil {
+		c.Ui.Error(fmt.Sprintf("Failed to marshal provider schemas to json: %s", err))
+		return 1
 	}
 	c.Ui.Output(string(jsonSchemas))
 
 	return 0
 }
 
-const providersSchemaCommandHelp = `
-Usage: terraform [global options] providers schema [selector-and-schema-options...]
+func marshalProvidersSchemaOutput(args *arguments.ProvidersSchema, schemas *terraform.Schemas, config *configs.Config) ([]byte, tfdiags.Diagnostics, error) {
+	if !providersSchemaHasSelectors(args) {
+		jsonSchemas, err := jsonprovider.Marshal(schemas)
+		return jsonSchemas, nil, err
+	}
 
-  Prints out a json representation of the schemas for all providers used
+	renderedSchemas := jsonprovider.MarshalForRenderer(schemas)
+	filteredSchemas, diags := filterProvidersSchemaJSON(args, schemas.Providers, config, renderedSchemas)
+	if diags.HasErrors() {
+		return nil, diags, nil
+	}
+
+	jsonSchemas, err := json.Marshal(&jsonprovider.Providers{
+		FormatVersion: jsonprovider.FormatVersion,
+		Schemas:       filteredSchemas,
+	})
+	return jsonSchemas, nil, err
+}
+
+func providersSchemaHasSelectors(args *arguments.ProvidersSchema) bool {
+	return args.ProviderSelector != "" || args.KindSelector != "" || args.NameSelector != ""
+}
+
+const providersSchemaCommandHelp = `
+Usage: terraform [global options] providers schema [options] [PROVIDER [KIND [NAME]]]
+
+  Prints out a JSON representation of the schemas for all providers used
   in the current configuration. The output can be narrowed by provider,
   schema kind, and schema name.
 

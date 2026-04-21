@@ -49,23 +49,7 @@ func ParseProvidersSchema(args []string) (*ProvidersSchema, tfdiags.Diagnostics)
 		))
 	}
 
-	args = cmdFlags.Args()
-	if len(args) > 3 {
-		diags = diags.Append(tfdiags.Sourceless(
-			tfdiags.Error,
-			"Too many command line arguments",
-			"Expected at most PROVIDER, KIND, and NAME positional arguments.",
-		))
-	}
-	if len(args) > 0 {
-		providersSchema.ProviderSelector = args[0]
-	}
-	if len(args) > 1 {
-		providersSchema.KindSelector = args[1]
-	}
-	if len(args) > 2 {
-		providersSchema.NameSelector = args[2]
-	}
+	diags = diags.Append(parseProvidersSchemaSelectors(providersSchema, cmdFlags.Args()))
 
 	if !providersSchema.JSON {
 		diags = diags.Append(tfdiags.Sourceless(
@@ -80,7 +64,7 @@ func ParseProvidersSchema(args []string) (*ProvidersSchema, tfdiags.Diagnostics)
 
 func preprocessProvidersSchemaArgs(args []string) ([]string, bool, bool, tfdiags.Diagnostics) {
 	var diags tfdiags.Diagnostics
-	var normalized []string
+	normalized := make([]string, 0, len(args))
 
 	jsonSet := false
 	jsonValue := false
@@ -98,26 +82,71 @@ func preprocessProvidersSchemaArgs(args []string) ([]string, bool, bool, tfdiags
 			continue
 		}
 
-		switch {
-		case arg == "-json":
-			jsonSet = true
-			jsonValue = true
-		case strings.HasPrefix(arg, "-json="):
-			value, err := strconv.ParseBool(strings.TrimPrefix(arg, "-json="))
-			if err != nil {
-				diags = diags.Append(tfdiags.Sourceless(
-					tfdiags.Error,
-					"Failed to parse command-line flags",
-					fmt.Sprintf("invalid boolean value %q for -json: parse error", strings.TrimPrefix(arg, "-json=")),
-				))
-				continue
-			}
+		if matches, value, flagDiags := parseProvidersSchemaJSONArg(arg); matches {
+			diags = diags.Append(flagDiags)
 			jsonSet = true
 			jsonValue = value
-		default:
-			normalized = append(normalized, arg)
+			continue
 		}
+
+		normalized = append(normalized, arg)
 	}
 
 	return normalized, jsonSet, jsonValue, diags
+}
+
+func parseProvidersSchemaJSONArg(arg string) (bool, bool, tfdiags.Diagnostics) {
+	switch arg {
+	case "-json", "--json":
+		return true, true, nil
+	}
+
+	for _, prefix := range []string{"-json=", "--json="} {
+		if !strings.HasPrefix(arg, prefix) {
+			continue
+		}
+
+		rawValue := strings.TrimPrefix(arg, prefix)
+		value, err := strconv.ParseBool(rawValue)
+		if err != nil {
+			return true, false, tfdiags.Diagnostics{tfdiags.Sourceless(
+				tfdiags.Error,
+				"Failed to parse command-line flags",
+				fmt.Sprintf("invalid boolean value %q for %s: parse error", rawValue, strings.TrimSuffix(prefix, "=")),
+			)}
+		}
+
+		return true, value, nil
+	}
+
+	return false, false, nil
+}
+
+func parseProvidersSchemaSelectors(providersSchema *ProvidersSchema, args []string) tfdiags.Diagnostics {
+	for i, arg := range args {
+		if strings.HasPrefix(arg, "-") {
+			return tfdiags.Diagnostics{tfdiags.Sourceless(
+				tfdiags.Error,
+				"Unexpected flag after selectors",
+				fmt.Sprintf("Only the `-json` flag may appear after PROVIDER, KIND, or NAME. Move %s before the selectors.", arg),
+			)}
+		}
+
+		switch i {
+		case 0:
+			providersSchema.ProviderSelector = arg
+		case 1:
+			providersSchema.KindSelector = arg
+		case 2:
+			providersSchema.NameSelector = arg
+		default:
+			return tfdiags.Diagnostics{tfdiags.Sourceless(
+				tfdiags.Error,
+				"Too many command line arguments",
+				"Expected at most PROVIDER, KIND, and NAME positional arguments.",
+			)}
+		}
+	}
+
+	return nil
 }

@@ -23,6 +23,20 @@ func TestParseProvidersSchema_valid(t *testing.T) {
 				Vars: &Vars{},
 			},
 		},
+		"double dash json": {
+			[]string{"--json"},
+			&ProvidersSchema{
+				JSON: true,
+				Vars: &Vars{},
+			},
+		},
+		"double dash json with explicit value": {
+			[]string{"--json=true"},
+			&ProvidersSchema{
+				JSON: true,
+				Vars: &Vars{},
+			},
+		},
 		"provider selector": {
 			[]string{"-json", "aws"},
 			&ProvidersSchema{
@@ -43,6 +57,16 @@ func TestParseProvidersSchema_valid(t *testing.T) {
 		},
 		"selectors with interspersed json": {
 			[]string{"aws", "-json", "resource", "aws_instance"},
+			&ProvidersSchema{
+				JSON:             true,
+				ProviderSelector: "aws",
+				KindSelector:     "resource",
+				NameSelector:     "aws_instance",
+				Vars:             &Vars{},
+			},
+		},
+		"selectors with interspersed double dash json": {
+			[]string{"aws", "--json", "resource", "aws_instance"},
 			&ProvidersSchema{
 				JSON:             true,
 				ProviderSelector: "aws",
@@ -119,6 +143,37 @@ func TestParseProvidersSchema_invalid(t *testing.T) {
 					tfdiags.Error,
 					"The -json flag is required",
 					"The `terraform providers schema` command requires the `-json` flag.",
+				),
+			},
+		},
+		"misplaced var flag after selectors": {
+			[]string{"aws", "-var", "foo=bar", "-json"},
+			&ProvidersSchema{
+				JSON:             true,
+				ProviderSelector: "aws",
+				Vars:             &Vars{},
+			},
+			tfdiags.Diagnostics{
+				tfdiags.Sourceless(
+					tfdiags.Error,
+					"Unexpected flag after selectors",
+					"Only the `-json` flag may appear after PROVIDER, KIND, or NAME. Move -var before the selectors.",
+				),
+			},
+		},
+		"misplaced var-file flag after selectors": {
+			[]string{"aws", "resource", "-var-file", "cool.tfvars", "-json"},
+			&ProvidersSchema{
+				JSON:             true,
+				ProviderSelector: "aws",
+				KindSelector:     "resource",
+				Vars:             &Vars{},
+			},
+			tfdiags.Diagnostics{
+				tfdiags.Sourceless(
+					tfdiags.Error,
+					"Unexpected flag after selectors",
+					"Only the `-json` flag may appear after PROVIDER, KIND, or NAME. Move -var-file before the selectors.",
 				),
 			},
 		},
