@@ -112,6 +112,100 @@ func TestProvidersSchema_output(t *testing.T) {
 	}
 }
 
+func TestProvidersSchema_output_selectors(t *testing.T) {
+	td := t.TempDir()
+	inputDir := filepath.Join("testdata/providers-schema", "basic")
+	testCopyDir(t, inputDir, td)
+	t.Chdir(td)
+
+	providerSource, close := newMockProviderSource(t, map[string][]string{
+		"test": {"1.2.3"},
+	})
+	defer close()
+
+	p := providersSchemaFixtureProvider()
+	view, done := testView(t)
+	m := Meta{
+		testingOverrides: metaOverridesForProvider(p),
+		Ui:               cli.NewMockUi(),
+		View:             view,
+		ProviderSource:   providerSource,
+	}
+
+	ic := &InitCommand{Meta: m}
+	if code := ic.Run([]string{}); code != 0 {
+		t.Fatalf("init failed\n%s", done(t).Stderr())
+	}
+
+	testCases := map[string]struct {
+		args                 []string
+		wantProvider         bool
+		wantResourceCount    int
+		wantProviderCount    int
+		wantProviderSchemaID string
+	}{
+		"provider selector": {
+			args:                 []string{"-json", "test"},
+			wantProvider:         true,
+			wantResourceCount:    1,
+			wantProviderCount:    1,
+			wantProviderSchemaID: "registry.terraform.io/hashicorp/test",
+		},
+		"provider kind with trailing json": {
+			args:                 []string{"test", "provider", "-json"},
+			wantProvider:         true,
+			wantResourceCount:    0,
+			wantProviderCount:    1,
+			wantProviderSchemaID: "registry.terraform.io/hashicorp/test",
+		},
+		"resource name with trailing json": {
+			args:                 []string{"test", "resource", "test_instance", "-json"},
+			wantProvider:         false,
+			wantResourceCount:    1,
+			wantProviderCount:    1,
+			wantProviderSchemaID: "registry.terraform.io/hashicorp/test",
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ui := new(cli.MockUi)
+			pc := &ProvidersSchemaCommand{
+				Meta: Meta{
+					testingOverrides: m.testingOverrides,
+					Ui:               ui,
+					View:             m.View,
+					ProviderSource:   m.ProviderSource,
+				},
+			}
+
+			if code := pc.Run(tc.args); code != 0 {
+				t.Fatalf("wrong exit status %d; want 0\nstderr: %s", code, ui.ErrorWriter.String())
+			}
+
+			var got providerSchemas
+			if err := json.Unmarshal([]byte(ui.OutputWriter.String()), &got); err != nil {
+				t.Fatalf("failed to decode output: %s", err)
+			}
+
+			if len(got.Schemas) != tc.wantProviderCount {
+				t.Fatalf("wrong provider count %d; want %d", len(got.Schemas), tc.wantProviderCount)
+			}
+
+			schema, ok := got.Schemas[tc.wantProviderSchemaID]
+			if !ok {
+				t.Fatalf("missing schema for %s", tc.wantProviderSchemaID)
+			}
+			if (schema.Provider != nil) != tc.wantProvider {
+				t.Fatalf("unexpected provider presence: %#v", schema.Provider)
+			}
+			if len(schema.ResourceSchemas) != tc.wantResourceCount {
+				t.Fatalf("wrong resource count %d; want %d", len(schema.ResourceSchemas), tc.wantResourceCount)
+			}
+		})
+	}
+}
+
 func TestProvidersSchema_output_withStateStore(t *testing.T) {
 	// State with a 'baz' provider not in the config
 	originalState := states.BuildState(func(s *states.SyncState) {

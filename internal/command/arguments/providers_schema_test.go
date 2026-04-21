@@ -23,6 +23,34 @@ func TestParseProvidersSchema_valid(t *testing.T) {
 				Vars: &Vars{},
 			},
 		},
+		"provider selector": {
+			[]string{"-json", "aws"},
+			&ProvidersSchema{
+				JSON:             true,
+				ProviderSelector: "aws",
+				Vars:             &Vars{},
+			},
+		},
+		"selectors with trailing json": {
+			[]string{"aws", "resource", "aws_instance", "-json"},
+			&ProvidersSchema{
+				JSON:             true,
+				ProviderSelector: "aws",
+				KindSelector:     "resource",
+				NameSelector:     "aws_instance",
+				Vars:             &Vars{},
+			},
+		},
+		"selectors with interspersed json": {
+			[]string{"aws", "-json", "resource", "aws_instance"},
+			&ProvidersSchema{
+				JSON:             true,
+				ProviderSelector: "aws",
+				KindSelector:     "resource",
+				NameSelector:     "aws_instance",
+				Vars:             &Vars{},
+			},
+		},
 	}
 
 	cmpOpts := cmpopts.IgnoreUnexported(Vars{})
@@ -60,16 +88,19 @@ func TestParseProvidersSchema_invalid(t *testing.T) {
 			},
 		},
 		"too many positional arguments": {
-			[]string{"-json", "extra"},
+			[]string{"-json", "aws", "resource", "aws_instance", "extra"},
 			&ProvidersSchema{
-				JSON: true,
-				Vars: &Vars{},
+				JSON:             true,
+				ProviderSelector: "aws",
+				KindSelector:     "resource",
+				NameSelector:     "aws_instance",
+				Vars:             &Vars{},
 			},
 			tfdiags.Diagnostics{
 				tfdiags.Sourceless(
 					tfdiags.Error,
 					"Too many command line arguments",
-					"Expected no positional arguments.",
+					"Expected at most PROVIDER, KIND, and NAME positional arguments.",
 				),
 			},
 		},

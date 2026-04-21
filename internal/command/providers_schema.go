@@ -4,6 +4,7 @@
 package command
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -104,10 +105,30 @@ func (c *ProvidersSchemaCommand) Run(args []string) int {
 		return 1
 	}
 
-	jsonSchemas, err := jsonprovider.Marshal(schemas)
-	if err != nil {
-		c.Ui.Error(fmt.Sprintf("Failed to marshal provider schemas to json: %s", err))
-		return 1
+	var jsonSchemas []byte
+	if parsedArgs.ProviderSelector == "" && parsedArgs.KindSelector == "" && parsedArgs.NameSelector == "" {
+		jsonSchemas, err = jsonprovider.Marshal(schemas)
+		if err != nil {
+			c.Ui.Error(fmt.Sprintf("Failed to marshal provider schemas to json: %s", err))
+			return 1
+		}
+	} else {
+		renderedSchemas := jsonprovider.MarshalForRenderer(schemas)
+		filteredSchemas, filterDiags := filterProvidersSchemaJSON(parsedArgs, schemas.Providers, lr.Config, renderedSchemas)
+		diags = diags.Append(filterDiags)
+		if filterDiags.HasErrors() {
+			c.showDiagnostics(diags)
+			return 1
+		}
+
+		jsonSchemas, err = json.Marshal(&jsonprovider.Providers{
+			FormatVersion: jsonprovider.FormatVersion,
+			Schemas:       filteredSchemas,
+		})
+		if err != nil {
+			c.Ui.Error(fmt.Sprintf("Failed to marshal provider schemas to json: %s", err))
+			return 1
+		}
 	}
 	c.Ui.Output(string(jsonSchemas))
 
@@ -115,10 +136,38 @@ func (c *ProvidersSchemaCommand) Run(args []string) int {
 }
 
 const providersSchemaCommandHelp = `
-Usage: terraform [global options] providers schema -json
+Usage: terraform [global options] providers schema [selector-and-schema-options...]
 
   Prints out a json representation of the schemas for all providers used
-  in the current configuration.
+  in the current configuration. The output can be narrowed by provider,
+  schema kind, and schema name.
+
+  Selectors:
+
+    PROVIDER              Select one provider already used by the current
+                          configuration or state. Accepts a fully-qualified
+                          source address, a unique shorthand such as "aws",
+                          or a unique root-module local provider name.
+
+    KIND                  Select one schema category within the provider.
+                          Supported canonical names are: provider, resource,
+                          data-source, ephemeral-resource, list, function,
+                          resource-identity, action, and state-store.
+                          Common aliases such as resources, data, actions,
+                          and state-stores are also accepted.
+
+    NAME                  Select one named schema entry within KIND.
+
+  The -json flag remains required and may appear anywhere after "schema",
+  including between selectors or at the end of the command. This flexible
+  placement applies only to -json.
+
+  Examples:
+
+    terraform providers schema -json
+    terraform providers schema -json aws
+    terraform providers schema aws resource aws_instance -json
+    terraform providers schema aws provider -json
 
 Options:
 

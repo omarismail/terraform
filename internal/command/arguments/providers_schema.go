@@ -3,12 +3,22 @@
 
 package arguments
 
-import "github.com/hashicorp/terraform/internal/tfdiags"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/hashicorp/terraform/internal/tfdiags"
+)
 
 // ProvidersSchema represents the command-line arguments for the providers
 // schema command.
 type ProvidersSchema struct {
 	JSON bool
+
+	ProviderSelector string
+	KindSelector     string
+	NameSelector     string
 
 	// Vars are the variable-related flags (-var, -var-file).
 	Vars *Vars
@@ -23,8 +33,13 @@ func ParseProvidersSchema(args []string) (*ProvidersSchema, tfdiags.Diagnostics)
 		Vars: &Vars{},
 	}
 
+	args, jsonSet, jsonValue, jsonDiags := preprocessProvidersSchemaArgs(args)
+	diags = diags.Append(jsonDiags)
+	if jsonSet {
+		providersSchema.JSON = jsonValue
+	}
+
 	cmdFlags := extendedFlagSet("providers schema", nil, nil, providersSchema.Vars)
-	cmdFlags.BoolVar(&providersSchema.JSON, "json", false, "produce JSON output")
 
 	if err := cmdFlags.Parse(args); err != nil {
 		diags = diags.Append(tfdiags.Sourceless(
@@ -35,12 +50,21 @@ func ParseProvidersSchema(args []string) (*ProvidersSchema, tfdiags.Diagnostics)
 	}
 
 	args = cmdFlags.Args()
-	if len(args) > 0 {
+	if len(args) > 3 {
 		diags = diags.Append(tfdiags.Sourceless(
 			tfdiags.Error,
 			"Too many command line arguments",
-			"Expected no positional arguments.",
+			"Expected at most PROVIDER, KIND, and NAME positional arguments.",
 		))
+	}
+	if len(args) > 0 {
+		providersSchema.ProviderSelector = args[0]
+	}
+	if len(args) > 1 {
+		providersSchema.KindSelector = args[1]
+	}
+	if len(args) > 2 {
+		providersSchema.NameSelector = args[2]
 	}
 
 	if !providersSchema.JSON {
@@ -52,4 +76,48 @@ func ParseProvidersSchema(args []string) (*ProvidersSchema, tfdiags.Diagnostics)
 	}
 
 	return providersSchema, diags
+}
+
+func preprocessProvidersSchemaArgs(args []string) ([]string, bool, bool, tfdiags.Diagnostics) {
+	var diags tfdiags.Diagnostics
+	var normalized []string
+
+	jsonSet := false
+	jsonValue := false
+	stopParsing := false
+
+	for _, arg := range args {
+		if stopParsing {
+			normalized = append(normalized, arg)
+			continue
+		}
+
+		if arg == "--" {
+			stopParsing = true
+			normalized = append(normalized, arg)
+			continue
+		}
+
+		switch {
+		case arg == "-json":
+			jsonSet = true
+			jsonValue = true
+		case strings.HasPrefix(arg, "-json="):
+			value, err := strconv.ParseBool(strings.TrimPrefix(arg, "-json="))
+			if err != nil {
+				diags = diags.Append(tfdiags.Sourceless(
+					tfdiags.Error,
+					"Failed to parse command-line flags",
+					fmt.Sprintf("invalid boolean value %q for -json: parse error", strings.TrimPrefix(arg, "-json=")),
+				))
+				continue
+			}
+			jsonSet = true
+			jsonValue = value
+		default:
+			normalized = append(normalized, arg)
+		}
+	}
+
+	return normalized, jsonSet, jsonValue, diags
 }
