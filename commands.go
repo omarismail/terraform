@@ -305,6 +305,12 @@ func initCommands(
 			}, nil
 		},
 
+		"server": func() (cli.Command, error) {
+			return &command.ServerCommand{
+				Meta: meta,
+			}, nil
+		},
+
 		"taint": func() (cli.Command, error) {
 			return &command.TaintCommand{
 				Meta: meta,
