@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="560" font-family="-apple-system,Segoe UI,Roboto,sans-serif">
+<rect width="960" height="560" fill="#ffffff"/>
+<text x="480.0" y="30" font-size="20" font-weight="700" text-anchor="middle" fill="#1a1a1a">Cumulative terraform plan time as plans repeat</text>
+<text x="480.0" y="50" font-size="13" text-anchor="middle" fill="#666">Full refresh ≈ 175s &#183; cached plan ≈ 1.66s</text>
+<line x1="80" y1="500.0" x2="760" y2="500.0" stroke="#eee" stroke-width="1"/>
+<text x="70" y="504.0" font-size="12" text-anchor="end" fill="#666">0s</text>
+<line x1="80" y1="414.0" x2="760" y2="414.0" stroke="#eee" stroke-width="1"/>
+<text x="70" y="418.0" font-size="12" text-anchor="end" fill="#666">400s</text>
+<line x1="80" y1="328.0" x2="760" y2="328.0" stroke="#eee" stroke-width="1"/>
+<text x="70" y="332.0" font-size="12" text-anchor="end" fill="#666">800s</text>
+<line x1="80" y1="242.0" x2="760" y2="242.0" stroke="#eee" stroke-width="1"/>
+<text x="70" y="246.0" font-size="12" text-anchor="end" fill="#666">1200s</text>
+<line x1="80" y1="156.0" x2="760" y2="156.0" stroke="#eee" stroke-width="1"/>
+<text x="70" y="160.0" font-size="12" text-anchor="end" fill="#666">1600s</text>
+<line x1="80" y1="70.0" x2="760" y2="70.0" stroke="#eee" stroke-width="1"/>
+<text x="70" y="74.0" font-size="12" text-anchor="end" fill="#666">2000s</text>
+<line x1="80" y1="70" x2="80" y2="500" stroke="#999" stroke-width="1.5"/>
+<line x1="80" y1="500" x2="760" y2="500" stroke="#999" stroke-width="1.5"/>
+<text x="80.0" y="522.0" font-size="12" text-anchor="middle" fill="#666">1</text>
+<text x="155.6" y="522.0" font-size="12" text-anchor="middle" fill="#666">2</text>
+<text x="231.1" y="522.0" font-size="12" text-anchor="middle" fill="#666">3</text>
+<text x="306.7" y="522.0" font-size="12" text-anchor="middle" fill="#666">4</text>
+<text x="382.2" y="522.0" font-size="12" text-anchor="middle" fill="#666">5</text>
+<text x="457.8" y="522.0" font-size="12" text-anchor="middle" fill="#666">6</text>
+<text x="533.3" y="522.0" font-size="12" text-anchor="middle" fill="#666">7</text>
+<text x="608.9" y="522.0" font-size="12" text-anchor="middle" fill="#666">8</text>
+<text x="684.4" y="522.0" font-size="12" text-anchor="middle" fill="#666">9</text>
+<text x="760.0" y="522.0" font-size="12" text-anchor="middle" fill="#666">10</text>
+<text x="420.0" y="548" font-size="13" text-anchor="middle" fill="#444">Number of plans run</text>
+<text x="20" y="285.0" font-size="13" text-anchor="middle" fill="#444" transform="rotate(-90 20 285.0)">Cumulative wall-clock time</text>
+<polygon points="80.0,462.4 155.6,424.8 231.1,387.2 306.7,349.6 382.2,312.0 457.8,274.4 533.3,236.8 608.9,199.2 684.4,161.6 760.0,124.0 760.0,459.2 684.4,459.5 608.9,459.9 533.3,460.3 457.8,460.6 382.2,461.0 306.7,461.3 231.1,461.7 155.6,462.0 80.0,462.4" fill="#34c759" opacity="0.10"/>
+<polyline points="80.0,462.4 155.6,424.8 231.1,387.2 306.7,349.6 382.2,312.0 457.8,274.4 533.3,236.8 608.9,199.2 684.4,161.6 760.0,124.0" fill="none" stroke="#ff3b30" stroke-width="3"/>
+<polyline points="80.0,462.4 155.6,462.0 231.1,461.7 306.7,461.3 382.2,461.0 457.8,460.6 533.3,460.3 608.9,459.9 684.4,459.5 760.0,459.2" fill="none" stroke="#34c759" stroke-width="3"/>
+<circle cx="80.0" cy="462.4" r="3.5" fill="#ff3b30"/>
+<circle cx="80.0" cy="462.4" r="3.5" fill="#34c759"/>
+<circle cx="155.6" cy="424.8" r="3.5" fill="#ff3b30"/>
+<circle cx="155.6" cy="462.0" r="3.5" fill="#34c759"/>
+<circle cx="231.1" cy="387.2" r="3.5" fill="#ff3b30"/>
+<circle cx="231.1" cy="461.7" r="3.5" fill="#34c759"/>
+<circle cx="306.7" cy="349.6" r="3.5" fill="#ff3b30"/>
+<circle cx="306.7" cy="461.3" r="3.5" fill="#34c759"/>
+<circle cx="382.2" cy="312.0" r="3.5" fill="#ff3b30"/>
+<circle cx="382.2" cy="461.0" r="3.5" fill="#34c759"/>
+<circle cx="457.8" cy="274.4" r="3.5" fill="#ff3b30"/>
+<circle cx="457.8" cy="460.6" r="3.5" fill="#34c759"/>
+<circle cx="533.3" cy="236.8" r="3.5" fill="#ff3b30"/>
+<circle cx="533.3" cy="460.3" r="3.5" fill="#34c759"/>
+<circle cx="608.9" cy="199.2" r="3.5" fill="#ff3b30"/>
+<circle cx="608.9" cy="459.9" r="3.5" fill="#34c759"/>
+<circle cx="684.4" cy="161.6" r="3.5" fill="#ff3b30"/>
+<circle cx="684.4" cy="459.5" r="3.5" fill="#34c759"/>
+<circle cx="760.0" cy="124.0" r="3.5" fill="#ff3b30"/>
+<circle cx="760.0" cy="459.2" r="3.5" fill="#34c759"/>
+<rect x="784" y="70" width="14" height="14" fill="#ff3b30"/>
+<text x="804" y="82" font-size="13" fill="#333">Plan every time</text>
+<text x="804" y="98" font-size="11" fill="#888">(refresh on every plan)</text>
+<rect x="784" y="120" width="14" height="14" fill="#34c759"/>
+<text x="804" y="132" font-size="13" fill="#333">Refresh artifact</text>
+<text x="804" y="148" font-size="11" fill="#888">(refresh once, reuse)</text>
+<text x="784" y="190" font-size="12" fill="#333" font-weight="700">After 10 plans:</text>
+<text x="784" y="210" font-size="12" fill="#ff3b30">repeat:  1749s</text>
+<text x="784" y="228" font-size="12" fill="#34c759">artifact: 190s</text>
+<text x="784" y="246" font-size="12" fill="#1a1a1a" font-weight="700">saved:   1559s</text>
+</svg>

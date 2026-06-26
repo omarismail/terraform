@@ -1,0 +1,4 @@
+resources,full_refresh_s,cached_s,speedup,refresh_share
+50,22.13,1.48,14.96,0.9331
+300,121.62,1.65,73.51,0.9864
+500,241.21,1.76,136.98,0.9927

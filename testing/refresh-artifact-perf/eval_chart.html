@@ -1,0 +1,60 @@
+<!doctype html><html><head><meta charset="utf-8">
+<title>Refresh artifact — evaluation across config sizes</title>
+<style>
+ body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;margin:40px;background:#0b0c12;color:#eceef5}
+ h1{font-size:21px} .k{color:#9aa0b8;font-size:13px}
+ table{border-collapse:collapse;margin-top:14px}
+ th,td{border:1px solid #2a2c38;padding:7px 14px;font-size:13px;text-align:right}
+ th:first-child,td:first-child{text-align:left} th{color:#9aa0b8}
+</style></head><body>
+<h1>Refresh artifact — evaluation across config sizes</h1>
+<p class="k">Flat / wide graph (depth 1). The live-refresh plan scales with resource
+count; the cached plan stays ~flat because it does no provider refresh.</p>
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="420" font-family="-apple-system,Segoe UI,Roboto,sans-serif">
+<rect width="760" height="420" fill="#0b0c12"/>
+<text x="380.0" y="20" font-size="15" font-weight="700" fill="#eceef5" text-anchor="middle">terraform plan time vs. config size (flat graph)</text>
+<line x1="64" y1="368.0" x2="610" y2="368.0" stroke="rgba(255,255,255,.08)"/>
+<text x="56" y="372.0" font-size="11" fill="#9aa0b8" text-anchor="end" font-family="ui-monospace,monospace">0s</text>
+<line x1="64" y1="300.4" x2="610" y2="300.4" stroke="rgba(255,255,255,.08)"/>
+<text x="56" y="304.4" font-size="11" fill="#9aa0b8" text-anchor="end" font-family="ui-monospace,monospace">50s</text>
+<line x1="64" y1="232.8" x2="610" y2="232.8" stroke="rgba(255,255,255,.08)"/>
+<text x="56" y="236.8" font-size="11" fill="#9aa0b8" text-anchor="end" font-family="ui-monospace,monospace">100s</text>
+<line x1="64" y1="165.2" x2="610" y2="165.2" stroke="rgba(255,255,255,.08)"/>
+<text x="56" y="169.2" font-size="11" fill="#9aa0b8" text-anchor="end" font-family="ui-monospace,monospace">150s</text>
+<line x1="64" y1="97.6" x2="610" y2="97.6" stroke="rgba(255,255,255,.08)"/>
+<text x="56" y="101.6" font-size="11" fill="#9aa0b8" text-anchor="end" font-family="ui-monospace,monospace">200s</text>
+<line x1="64" y1="30.0" x2="610" y2="30.0" stroke="rgba(255,255,255,.08)"/>
+<text x="56" y="34.0" font-size="11" fill="#9aa0b8" text-anchor="end" font-family="ui-monospace,monospace">250s</text>
+<line x1="64" y1="30" x2="64" y2="368" stroke="#7d8398"/>
+<line x1="64" y1="368" x2="610" y2="368" stroke="#7d8398"/>
+<text x="116.5" y="388.0" font-size="11" fill="#9aa0b8" text-anchor="middle" font-family="ui-monospace,monospace">50</text>
+<text x="379.0" y="388.0" font-size="11" fill="#9aa0b8" text-anchor="middle" font-family="ui-monospace,monospace">300</text>
+<text x="589.0" y="388.0" font-size="11" fill="#9aa0b8" text-anchor="middle" font-family="ui-monospace,monospace">500</text>
+<text x="337.0" y="414" font-size="12" fill="#7d8398" text-anchor="middle">number of resources (all top-level, no dependencies)</text>
+<polyline points="116.5,338.1 379.0,203.6 589.0,41.9" fill="none" stroke="#ff5c6c" stroke-width="3"/>
+<polyline points="116.5,366.0 379.0,365.8 589.0,365.6" fill="none" stroke="#34d399" stroke-width="3"/>
+<circle cx="116.5" cy="338.1" r="4" fill="#ff5c6c"/>
+<circle cx="116.5" cy="366.0" r="4" fill="#34d399"/>
+<text x="116.5" y="328.1" font-size="11" fill="#ff8a8f" text-anchor="middle" font-family="ui-monospace,monospace">22s</text>
+<circle cx="379.0" cy="203.6" r="4" fill="#ff5c6c"/>
+<circle cx="379.0" cy="365.8" r="4" fill="#34d399"/>
+<text x="379.0" y="193.6" font-size="11" fill="#ff8a8f" text-anchor="middle" font-family="ui-monospace,monospace">122s</text>
+<circle cx="589.0" cy="41.9" r="4" fill="#ff5c6c"/>
+<circle cx="589.0" cy="365.6" r="4" fill="#34d399"/>
+<text x="589.0" y="31.9" font-size="11" fill="#ff8a8f" text-anchor="middle" font-family="ui-monospace,monospace">241s</text>
+<rect x="630" y="36" width="12" height="12" rx="3" fill="#ff5c6c"/>
+<text x="648" y="46" font-size="12" fill="#eceef5">plan (live refresh)</text>
+<rect x="630" y="60" width="12" height="12" rx="3" fill="#34d399"/>
+<text x="648" y="70" font-size="12" fill="#eceef5">plan -with-refresh</text>
+<text x="630" y="104" font-size="12" fill="#34d399" font-weight="700">cached ≈ 1.8s</text>
+<text x="630" y="120" font-size="11" fill="#9aa0b8">flat across all sizes</text>
+<text x="630" y="148" font-size="12" fill="#eceef5" font-weight="700">137× at 500</text>
+</svg>
+<table>
+<tr><th>resources</th><th>plan (live refresh)</th><th>plan -with-refresh</th><th>speedup</th><th>refresh share</th></tr>
+<tr><td>50</td><td>22.13s</td><td>1.48s</td><td><b>15×</b></td><td>93.3%</td></tr>
+<tr><td>300</td><td>121.62s</td><td>1.65s</td><td><b>74×</b></td><td>98.6%</td></tr>
+<tr><td>500</td><td>241.21s</td><td>1.76s</td><td><b>137×</b></td><td>99.3%</td></tr>
+</table>
+<p class="k">refresh share = (live − cached) / live: the fraction of plan wall-clock that is provider refresh.</p>
+</body></html>

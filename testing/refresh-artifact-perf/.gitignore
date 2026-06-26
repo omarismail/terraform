@@ -1,0 +1,16 @@
+# Built dev binary (large; rebuild with `go build -o terraform-dev .` from repo root)
+terraform-dev
+
+# Terraform working state, locks, and provider plugin caches (regenerated per run)
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+terraform.tfvars.json
+
+# The refresh artifact itself is a per-run scratch output
+objects.json
+
+# Logs and python caches
+*.log
+__pycache__/
