@@ -96,7 +96,7 @@ func (c *ApplyCommand) Run(rawArgs []string) int {
 	}
 
 	// Build the operation request
-	opReq, opDiags := c.OperationRequest(be, view, args.ViewType, planFile, args.Operation, args.AutoApprove, args.PolicyPaths)
+	opReq, opDiags := c.OperationRequest(be, view, args.ViewType, planFile, args.Operation, args.AutoApprove, args.WithRefreshPath, args.PolicyPaths)
 	diags = diags.Append(opDiags)
 	if diags.HasErrors() {
 		view.Diagnostics(diags)
@@ -258,7 +258,7 @@ func (c *ApplyCommand) PrepareBackend(planFile *planfile.WrappedPlanFile, args *
 	return be, diags
 }
 
-func (c *ApplyCommand) OperationRequest(be backendrun.OperationsBackend, view views.Apply, viewType arguments.ViewType, planFile *planfile.WrappedPlanFile, args *arguments.Operation, autoApprove bool, policyPaths []string) (*backendrun.Operation, tfdiags.Diagnostics) {
+func (c *ApplyCommand) OperationRequest(be backendrun.OperationsBackend, view views.Apply, viewType arguments.ViewType, planFile *planfile.WrappedPlanFile, args *arguments.Operation, autoApprove bool, withRefreshPath string, policyPaths []string) (*backendrun.Operation, tfdiags.Diagnostics) {
 	var diags tfdiags.Diagnostics
 
 	// Applying changes with dev overrides in effect could make it impossible
@@ -279,6 +279,7 @@ func (c *ApplyCommand) OperationRequest(be backendrun.OperationsBackend, view vi
 	opReq.Hooks = view.Hooks()
 	opReq.PlanFile = planFile
 	opReq.PlanRefresh = args.Refresh
+	opReq.RefreshArtifactPath = withRefreshPath
 	opReq.Targets = args.Targets
 	opReq.ForceReplace = args.ForceReplace
 	opReq.Type = backendrun.OperationTypeApply
@@ -371,6 +372,11 @@ Options:
 
   -replace=resource      Terraform will plan to replace this resource instance
                          instead of doing an update or no-op action.
+
+  -with-refresh=path     Reuse a refresh artifact previously written with
+                         "terraform plan -refresh-out" during the implicit plan
+                         that apply performs, instead of refreshing managed
+                         resources. Not valid when applying a saved plan file.
 
   -state=path            Path to read and save state (unless state-out
                          is specified). Defaults to "terraform.tfstate".

@@ -10,6 +10,7 @@ import (
 	"maps"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/hcl/v2"
 	"github.com/zclconf/go-cty/cty"
@@ -22,6 +23,7 @@ import (
 	"github.com/hashicorp/terraform/internal/depsfile"
 	"github.com/hashicorp/terraform/internal/lang"
 	"github.com/hashicorp/terraform/internal/plans/planfile"
+	"github.com/hashicorp/terraform/internal/plans/refreshfile"
 	"github.com/hashicorp/terraform/internal/states/statemgr"
 	"github.com/hashicorp/terraform/internal/terraform"
 	"github.com/hashicorp/terraform/internal/tfdiags"
@@ -197,6 +199,22 @@ func (b *Local) localRunDirect(op *backendrun.Operation, run *backendrun.LocalRu
 	// snapshot, from the previous run.
 	run.InputState = s.State()
 
+	// If a refresh artifact was provided, validate it against the current state
+	// snapshot and seed planning from it instead of performing a live refresh
+	// of managed resources. This overrides run.InputState and planOpts above.
+	if op.RefreshArtifactPath != "" {
+		var stateMeta *statemgr.SnapshotMeta
+		if sm, ok := s.(statemgr.PersistentMeta); ok {
+			m := sm.StateSnapshotMeta()
+			stateMeta = &m
+		}
+		seedDiags := seedRunFromRefreshArtifact(op, planOpts, run, stateMeta)
+		diags = diags.Append(seedDiags)
+		if seedDiags.HasErrors() {
+			return run, nil, diags
+		}
+	}
+
 	tfCtx, moreDiags := terraform.NewContext(coreOpts)
 	diags = diags.Append(moreDiags)
 	if moreDiags.HasErrors() {
@@ -250,6 +268,100 @@ func (b *Local) localRunDirect(op *backendrun.Operation, run *backendrun.LocalRu
 	}
 
 	return run, configSnap, diags
+}
+
+// seedRunFromRefreshArtifact opens and validates the refresh artifact named by
+// op.RefreshArtifactPath, then seeds the given run and plan options so that
+// planning reuses the artifact's captured refresh result instead of performing
+// a live refresh of managed resources.
+//
+// On success it overrides run.InputState with the artifact's refreshed ("prior")
+// snapshot, sets planOpts.SkipRefresh, and carries the artifact's pre-refresh
+// ("previous run") snapshot through planOpts so that drift can still be reported.
+func seedRunFromRefreshArtifact(op *backendrun.Operation, planOpts *terraform.PlanOpts, run *backendrun.LocalRun, currentStateMeta *statemgr.SnapshotMeta) tfdiags.Diagnostics {
+	var diags tfdiags.Diagnostics
+	const errSummary = "Invalid refresh artifact"
+
+	reader, err := refreshfile.Open(op.RefreshArtifactPath)
+	if err != nil {
+		diags = diags.Append(tfdiags.Sourceless(
+			tfdiags.Error,
+			errSummary,
+			fmt.Sprintf("Failed to open the refresh artifact %q: %s.", op.RefreshArtifactPath, err),
+		))
+		return diags
+	}
+
+	meta := reader.Metadata()
+
+	priorStateFile, err := reader.ReadPriorStateFile()
+	if err != nil {
+		diags = diags.Append(tfdiags.Sourceless(
+			tfdiags.Error,
+			errSummary,
+			fmt.Sprintf("Failed to read the refreshed state snapshot from the refresh artifact: %s.", err),
+		))
+		return diags
+	}
+	prevStateFile, err := reader.ReadPrevStateFile()
+	if err != nil {
+		diags = diags.Append(tfdiags.Sourceless(
+			tfdiags.Error,
+			errSummary,
+			fmt.Sprintf("Failed to read the previous run state snapshot from the refresh artifact: %s.", err),
+		))
+		return diags
+	}
+
+	// Validate the artifact against the currently selected state snapshot,
+	// mirroring the staleness checks done for saved plans. This protects
+	// against using an artifact created before some other operation changed
+	// state. It does not (and cannot) protect against out-of-band changes in
+	// the remote system after the artifact was created.
+	if currentStateMeta != nil {
+		// Because the artifact always records state metadata, the first plan to
+		// be applied will have empty snapshot metadata. In this case we compare
+		// only the serial in order to provide a more correct error.
+		firstPlan := meta.Lineage == "" && meta.Serial == 0
+
+		switch {
+		case !firstPlan && meta.Lineage != currentStateMeta.Lineage:
+			diags = diags.Append(tfdiags.Sourceless(
+				tfdiags.Error,
+				"Refresh artifact does not match the given state",
+				"The given refresh artifact can not be used because it was created from a different state lineage.",
+			))
+			return diags
+
+		case meta.Serial != currentStateMeta.Serial:
+			diags = diags.Append(tfdiags.Sourceless(
+				tfdiags.Error,
+				"Refresh artifact is stale",
+				"The given refresh artifact can no longer be used because the state was changed by another operation after the artifact was created. Create a new artifact with \"terraform plan -refresh-only -refresh-out=...\".",
+			))
+			return diags
+		}
+	}
+
+	// Seed planning from the artifact.
+	run.InputState = priorStateFile.State
+	planOpts.SkipRefresh = true
+	planOpts.RefreshArtifactPrevRunState = prevStateFile.State
+
+	// Remind the operator that the cached refresh may not reflect the current
+	// real-world state.
+	detail := "Planning is using a cached refresh snapshot instead of refreshing managed resources, so remote objects may have changed since the artifact was created"
+	if !meta.CreatedAt.IsZero() {
+		detail += fmt.Sprintf(" (%s)", meta.CreatedAt.Format(time.RFC3339))
+	}
+	detail += "."
+	diags = diags.Append(tfdiags.Sourceless(
+		tfdiags.Warning,
+		"Using cached refresh artifact",
+		detail,
+	))
+
+	return diags
 }
 
 func (b *Local) localRunForPlanFile(op *backendrun.Operation, pf *planfile.Reader, run *backendrun.LocalRun, coreOpts *terraform.ContextOpts, currentStateMeta *statemgr.SnapshotMeta) (*backendrun.LocalRun, *configload.Snapshot, tfdiags.Diagnostics) {

@@ -25,6 +25,18 @@ type Plan struct {
 	// OutPath contains an optional path to store the plan file
 	OutPath string
 
+	// RefreshOutPath contains an optional path to write a reusable refresh
+	// artifact capturing the result of this plan's refresh step. The artifact
+	// can later be passed to "terraform plan -with-refresh" or
+	// "terraform apply -with-refresh" to reuse the refreshed snapshot without
+	// performing a live refresh again.
+	RefreshOutPath string
+
+	// WithRefreshPath contains an optional path to a refresh artifact
+	// previously written with -refresh-out. When set, planning reuses the
+	// artifact's refreshed snapshot instead of performing a live refresh.
+	WithRefreshPath string
+
 	// GenerateConfigPath tells Terraform that config should be generated for
 	// unmatched import target paths and which path the generated file should
 	// be written to.
@@ -53,6 +65,8 @@ func ParsePlan(args []string) (*Plan, tfdiags.Diagnostics) {
 	cmdFlags.BoolVar(&plan.DetailedExitCode, "detailed-exitcode", false, "detailed-exitcode")
 	cmdFlags.BoolVar(&plan.InputEnabled, "input", true, "input")
 	cmdFlags.StringVar(&plan.OutPath, "out", "", "out")
+	cmdFlags.StringVar(&plan.RefreshOutPath, "refresh-out", "", "refresh-out")
+	cmdFlags.StringVar(&plan.WithRefreshPath, "with-refresh", "", "with-refresh")
 	cmdFlags.StringVar(&plan.GenerateConfigPath, "generate-config-out", "", "generate-config-out")
 	cmdFlags.Var((*FlagStringSlice)(&plan.PolicyPaths), "policies", "policies")
 
@@ -86,6 +100,22 @@ func ParsePlan(args []string) (*Plan, tfdiags.Diagnostics) {
 	}
 
 	diags = diags.Append(plan.Operation.Parse())
+
+	// Refresh artifact flag validation.
+	if plan.RefreshOutPath != "" && plan.WithRefreshPath != "" {
+		diags = diags.Append(tfdiags.Sourceless(
+			tfdiags.Error,
+			"Incompatible refresh artifact options",
+			"The -refresh-out and -with-refresh options are mutually-exclusive. -refresh-out writes a new refresh artifact, while -with-refresh consumes an existing one.",
+		))
+	}
+	if plan.RefreshOutPath != "" && !plan.Operation.Refresh {
+		diags = diags.Append(tfdiags.Sourceless(
+			tfdiags.Error,
+			"Incompatible refresh options",
+			"It doesn't make sense to use -refresh-out at the same time as -refresh=false, because there would be no refresh result to capture.",
+		))
+	}
 
 	// JSON view currently does not support input, so we disable it here
 	if json {

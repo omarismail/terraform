@@ -109,6 +109,42 @@ func TestParsePlan_tooManyArguments(t *testing.T) {
 	}
 }
 
+func TestParsePlan_refreshArtifact(t *testing.T) {
+	t.Run("refresh-out", func(t *testing.T) {
+		got, diags := ParsePlan([]string{"-refresh-only", "-refresh-out=objects.json"})
+		if len(diags) != 0 {
+			t.Fatalf("unexpected diags: %s", diags.Err())
+		}
+		if got.RefreshOutPath != "objects.json" {
+			t.Errorf("wrong RefreshOutPath: got %q", got.RefreshOutPath)
+		}
+	})
+
+	t.Run("with-refresh", func(t *testing.T) {
+		got, diags := ParsePlan([]string{"-with-refresh=objects.json"})
+		if len(diags) != 0 {
+			t.Fatalf("unexpected diags: %s", diags.Err())
+		}
+		if got.WithRefreshPath != "objects.json" {
+			t.Errorf("wrong WithRefreshPath: got %q", got.WithRefreshPath)
+		}
+	})
+
+	t.Run("refresh-out and with-refresh are mutually exclusive", func(t *testing.T) {
+		_, diags := ParsePlan([]string{"-refresh-out=a.json", "-with-refresh=b.json"})
+		if got, want := diags.Err().Error(), "mutually-exclusive"; !strings.Contains(got, want) {
+			t.Fatalf("wrong diags\n got: %s\nwant substring: %s", got, want)
+		}
+	})
+
+	t.Run("refresh-out rejects -refresh=false", func(t *testing.T) {
+		_, diags := ParsePlan([]string{"-refresh-out=a.json", "-refresh=false"})
+		if got, want := diags.Err().Error(), "Incompatible refresh options"; !strings.Contains(got, want) {
+			t.Fatalf("wrong diags\n got: %s\nwant substring: %s", got, want)
+		}
+	})
+}
+
 func TestParsePlan_targets(t *testing.T) {
 	foobarbaz, _ := addrs.ParseTargetStr("foo_bar.baz")
 	boop, _ := addrs.ParseTargetStr("module.boop")

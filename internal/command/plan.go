@@ -80,7 +80,7 @@ func (c *PlanCommand) Run(rawArgs []string) int {
 	}
 
 	// Build the operation request
-	opReq, opDiags := c.OperationRequest(be, view, args.ViewType, args.Operation, args.OutPath, args.GenerateConfigPath, args.PolicyPaths)
+	opReq, opDiags := c.OperationRequest(be, view, args.ViewType, args.Operation, args.OutPath, args.RefreshOutPath, args.WithRefreshPath, args.GenerateConfigPath, args.PolicyPaths)
 	diags = diags.Append(opDiags)
 	if diags.HasErrors() {
 		view.Diagnostics(diags)
@@ -153,7 +153,7 @@ func (c *PlanCommand) PrepareBackend(args *arguments.State, viewType arguments.V
 	return be, diags
 }
 
-func (c *PlanCommand) OperationRequest(be backendrun.OperationsBackend, view views.Plan, viewType arguments.ViewType, args *arguments.Operation, planOutPath string, generateConfigOut string, policyPaths []string) (*backendrun.Operation, tfdiags.Diagnostics) {
+func (c *PlanCommand) OperationRequest(be backendrun.OperationsBackend, view views.Plan, viewType arguments.ViewType, args *arguments.Operation, planOutPath string, refreshOutPath string, withRefreshPath string, generateConfigOut string, policyPaths []string) (*backendrun.Operation, tfdiags.Diagnostics) {
 	var diags tfdiags.Diagnostics
 
 	// Build the operation
@@ -163,6 +163,8 @@ func (c *PlanCommand) OperationRequest(be backendrun.OperationsBackend, view vie
 	opReq.Hooks = view.Hooks()
 	opReq.PlanRefresh = args.Refresh
 	opReq.PlanOutPath = planOutPath
+	opReq.RefreshArtifactOutPath = refreshOutPath
+	opReq.RefreshArtifactPath = withRefreshPath
 	opReq.GenerateConfigOut = generateConfigOut
 	opReq.Targets = args.Targets
 	opReq.ForceReplace = args.ForceReplace
@@ -277,6 +279,22 @@ Other Options:
 
   -out=path                  Write a plan file to the given path. This can be
                              used as input to the "apply" command.
+
+  -refresh-out=path          Write a reusable refresh artifact to the given
+                             path, capturing the refreshed and pre-refresh state
+                             snapshots produced by this plan. The artifact can
+                             later be passed to "plan -with-refresh" or
+                             "apply -with-refresh" to reuse the refreshed
+                             snapshot without refreshing again. Most useful with
+                             -refresh-only. Cannot be combined with
+                             -refresh=false.
+
+  -with-refresh=path         Reuse a refresh artifact previously written with
+                             -refresh-out instead of performing a live refresh.
+                             Planning still runs against current configuration
+                             and variables, but managed resources are not
+                             refreshed. Remote objects may have changed since the
+                             artifact was created.
 
   -parallelism=n             Limit the number of concurrent operations. Defaults
                              to 10.

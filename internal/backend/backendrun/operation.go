@@ -78,6 +78,18 @@ type Operation struct {
 	PlanRefresh bool   // PlanRefresh will do a refresh before a plan
 	PlanOutPath string // PlanOutPath is the path to save the plan
 
+	// RefreshArtifactOutPath, if set, causes the local backend to write a
+	// reusable refresh artifact (a JSON file) capturing the refreshed and
+	// pre-refresh state snapshots after a successful plan. This is the
+	// destination for "terraform plan -refresh-out=FILE".
+	RefreshArtifactOutPath string
+
+	// RefreshArtifactPath, if set, causes the local backend to seed planning
+	// from a previously-written refresh artifact instead of performing a live
+	// refresh of managed resources. This is the source for
+	// "terraform plan -with-refresh=FILE" and "terraform apply -with-refresh=FILE".
+	RefreshArtifactPath string
+
 	// PlanOutBackend is the backend to store with the plan. This is the
 	// backend that will be used when applying the plan.
 	// Only one of PlanOutBackend or PlanOutStateStore may be set.

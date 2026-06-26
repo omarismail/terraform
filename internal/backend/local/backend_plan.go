@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -17,6 +18,7 @@ import (
 	"github.com/hashicorp/terraform/internal/logging"
 	"github.com/hashicorp/terraform/internal/plans"
 	"github.com/hashicorp/terraform/internal/plans/planfile"
+	"github.com/hashicorp/terraform/internal/plans/refreshfile"
 	"github.com/hashicorp/terraform/internal/states/statefile"
 	"github.com/hashicorp/terraform/internal/states/statemgr"
 	"github.com/hashicorp/terraform/internal/terraform"
@@ -200,6 +202,36 @@ func (b *Local) opPlan(
 				tfdiags.Error,
 				"Failed to write plan file",
 				fmt.Sprintf("The plan file could not be written: %s.", err),
+			))
+			op.ReportResult(runningOp, diags)
+			return
+		}
+	}
+
+	// Save a reusable refresh artifact to disk, if requested. Unlike a saved
+	// plan file, this captures only the refreshed and pre-refresh state
+	// snapshots so that they can seed later plan/apply runs without performing
+	// a live refresh again. It deliberately does not persist anything to the
+	// state backend.
+	if path := op.RefreshArtifactOutPath; path != "" {
+		// The refreshed "prior" snapshot carries the source state metadata
+		// (lineage/serial) so that a later consumer can reject the artifact if
+		// the persisted state has since changed.
+		priorStateFile := statemgr.PlannedStateUpdate(opState, plan.PriorState)
+		prevStateFile := statemgr.PlannedStateUpdate(opState, plan.PrevRunState)
+
+		log.Printf("[INFO] backend/local: writing refresh artifact to: %s", path)
+		err := refreshfile.Create(path, refreshfile.CreateArgs{
+			PriorStateFile:       priorStateFile,
+			PreviousRunStateFile: prevStateFile,
+			Workspace:            op.Workspace,
+			CreatedAt:            time.Now().UTC(),
+		})
+		if err != nil {
+			diags = diags.Append(tfdiags.Sourceless(
+				tfdiags.Error,
+				"Failed to write refresh artifact",
+				fmt.Sprintf("The refresh artifact could not be written: %s.", err),
 			))
 			op.ReportResult(runningOp, diags)
 			return

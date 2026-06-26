@@ -165,6 +165,25 @@ func TestParseApply_tooManyArguments(t *testing.T) {
 	}
 }
 
+func TestParseApply_refreshArtifact(t *testing.T) {
+	t.Run("with-refresh", func(t *testing.T) {
+		got, diags := ParseApply([]string{"-with-refresh=objects.json"})
+		if len(diags) != 0 {
+			t.Fatalf("unexpected diags: %s", diags.Err())
+		}
+		if got.WithRefreshPath != "objects.json" {
+			t.Errorf("wrong WithRefreshPath: got %q", got.WithRefreshPath)
+		}
+	})
+
+	t.Run("with-refresh rejects saved plan file", func(t *testing.T) {
+		_, diags := ParseApply([]string{"-with-refresh=objects.json", "saved.tfplan"})
+		if got, want := diags.Err().Error(), "Incompatible apply options"; !strings.Contains(got, want) {
+			t.Fatalf("wrong diags\n got: %s\nwant substring: %s", got, want)
+		}
+	})
+}
+
 func TestParseApply_targets(t *testing.T) {
 	foobarbaz, _ := addrs.ParseTargetStr("foo_bar.baz")
 	boop, _ := addrs.ParseTargetStr("module.boop")

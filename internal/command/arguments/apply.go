@@ -27,6 +27,13 @@ type Apply struct {
 	// PlanPath contains an optional path to a stored plan file
 	PlanPath string
 
+	// WithRefreshPath contains an optional path to a refresh artifact
+	// previously written with "terraform plan -refresh-out". When set, the
+	// implicit plan that apply performs reuses the artifact's refreshed
+	// snapshot instead of performing a live refresh. It is not valid together
+	// with a saved plan file.
+	WithRefreshPath string
+
 	// ViewType specifies which output format to use
 	ViewType ViewType
 
@@ -49,6 +56,7 @@ func ParseApply(args []string) (*Apply, tfdiags.Diagnostics) {
 	cmdFlags := extendedFlagSet("apply", apply.State, apply.Operation, apply.Vars)
 	cmdFlags.BoolVar(&apply.AutoApprove, "auto-approve", false, "auto-approve")
 	cmdFlags.BoolVar(&apply.InputEnabled, "input", true, "input")
+	cmdFlags.StringVar(&apply.WithRefreshPath, "with-refresh", "", "with-refresh")
 	cmdFlags.Var((*FlagStringSlice)(&apply.PolicyPaths), "policies", "policies")
 
 	var json bool
@@ -97,6 +105,17 @@ func ParseApply(args []string) (*Apply, tfdiags.Diagnostics) {
 			tfdiags.Error,
 			"Plan file or auto-approve required",
 			"Terraform cannot ask for interactive approval when -json is set. You can either apply a saved plan file, or enable the -auto-approve option.",
+		))
+	}
+
+	// A refresh artifact only seeds the implicit plan that apply performs, so
+	// it is meaningless (and likely a mistake) to combine it with a saved plan
+	// file, which already embeds its own refreshed prior state.
+	if apply.WithRefreshPath != "" && apply.PlanPath != "" {
+		diags = diags.Append(tfdiags.Sourceless(
+			tfdiags.Error,
+			"Incompatible apply options",
+			"The -with-refresh option can not be used when applying a saved plan file, because a saved plan already contains the refreshed state it was created with.",
 		))
 	}
 

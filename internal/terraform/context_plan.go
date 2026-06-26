@@ -169,6 +169,21 @@ type PlanOpts struct {
 
 	// Optional policy client to enable live policy evaluations.
 	PolicyClient policy.Client
+
+	// RefreshArtifactPrevRunState, when non-nil, indicates that this plan is
+	// being seeded from a previously-captured refresh artifact rather than
+	// performing a live refresh of managed resources.
+	//
+	// It carries the pre-refresh ("previous run") state snapshot recorded in
+	// the artifact. The refreshed ("prior") snapshot is provided through the
+	// normal plan input state, and SkipRefresh must be set to true so that the
+	// artifact's already-refreshed values are used as-is.
+	//
+	// When set, planWalk applies the current configuration's move statements to
+	// this snapshot and then uses it as the plan's PrevRunState. This preserves
+	// drift reporting (and refresh-only applyability) between the pre-refresh
+	// and refreshed snapshots without performing a live refresh.
+	RefreshArtifactPrevRunState *states.State
 }
 
 // Plan generates an execution plan by comparing the given configuration
@@ -241,10 +256,12 @@ func (c *Context) PlanAndEval(config *configs.Config, prevRunState *states.State
 	case plans.NormalMode, plans.DestroyMode:
 		// OK
 	case plans.RefreshOnlyMode:
-		if opts.SkipRefresh && len(opts.ActionTargets) == 0 {
+		if opts.SkipRefresh && len(opts.ActionTargets) == 0 && opts.RefreshArtifactPrevRunState == nil {
 			// The CLI layer (and other similar callers) should prevent this
 			// combination of options - although it is okay if we are invoking
-			// actions.
+			// actions, or if we are seeding the refreshed state from a refresh
+			// artifact (in which case we deliberately skip live refresh but the
+			// artifact still provides a refreshed snapshot to compare against).
 			diags = diags.Append(tfdiags.Sourceless(
 				tfdiags.Error,
 				"Incompatible plan options",
@@ -767,6 +784,22 @@ func (c *Context) planWalk(config *configs.Config, prevRunState *states.State, o
 		return nil, nil, diags
 	}
 
+	// When seeding from a refresh artifact, the plan's input state is the
+	// artifact's refreshed ("prior") snapshot, which is what we plan against
+	// after skipping live refresh. We must thread the artifact's pre-refresh
+	// ("previous run") snapshot separately so that drift can still be reported.
+	// We apply the same current move statements to it so it stays consistent
+	// with the moved prior snapshot used to build the graph.
+	var artifactPrevRunState *states.State
+	if opts.RefreshArtifactPrevRunState != nil {
+		artifactPrevRunState = opts.RefreshArtifactPrevRunState.DeepCopy()
+		_, moveDiags := refactoring.ApplyMoves(moveStmts, artifactPrevRunState, c.plugins.ProviderFactories())
+		diags = diags.Append(moveDiags)
+		if moveDiags.HasErrors() {
+			return nil, nil, diags
+		}
+	}
+
 	// If resource targeting is in effect then it might conflict with the
 	// move result.
 	diags = diags.Append(c.prePlanVerifyTargetedMoves(moveResults, opts.Targets))
@@ -853,6 +886,16 @@ func (c *Context) planWalk(config *configs.Config, prevRunState *states.State, o
 	// so that e.g. the UI can show what was planned so far in case that extra
 	// context helps the user to understand the error messages we're returning.
 	prevRunState = walker.PrevRunState.Close()
+
+	if artifactPrevRunState != nil {
+		// We seeded the working/refresh state from the artifact's refreshed
+		// snapshot and skipped live refresh, so walker.PrevRunState now holds
+		// the refreshed values rather than the pre-refresh ones. Substitute the
+		// artifact's pre-refresh snapshot (with current moves applied) so that
+		// drift is reported relative to the captured pre-refresh world, exactly
+		// as it would be for a live-refresh plan.
+		prevRunState = artifactPrevRunState
+	}
 
 	// The refreshed state may have data resource objects which were deferred
 	// to apply and cannot be serialized.
